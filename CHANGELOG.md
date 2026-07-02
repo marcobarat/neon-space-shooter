@@ -3,6 +3,18 @@
 Tutte le modifiche rilevanti del progetto sono documentate qui.
 Il formato segue una versione semplificata di [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [Non rilasciato]
+
+### Strumenti
+- Il `game-director` ha valutato lo stato del gioco a fronte del feedback del proprietario
+  ("carino ma estremamente noioso e graficamente banale") e ha creato due nuovi agenti
+  specialisti in `.claude/agents/`:
+  - `juice-designer` — game feel/juice e varietà, per rendere il gioco meno noioso
+    (impatto dei colpi, combo/moltiplicatore, pattern e ritmo delle ondate).
+  - `visual-artist` — direzione artistica neon in canvas 2D (glow a strati, gradienti,
+    sfondo vivo, trail), per superare l'aspetto grafico banale.
+- Aggiornata la tabella agenti nel `README.md`.
+
 ## [0.1.0] — 2026-07-02
 
 Prima versione giocabile di **Neon Space Shooter**.

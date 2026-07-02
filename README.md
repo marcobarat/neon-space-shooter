@@ -44,6 +44,8 @@ release del gioco:
 | Agente | Cosa fa | Quando usarlo |
 | --- | --- | --- |
 | **feature-scout** | Trae ispirazione dalle tendenze e propone feature fighe per i ragazzi del 2026 | Dopo una release, per decidere cosa costruire dopo |
+| **juice-designer** | Aggiunge game feel/juice e varietà per rendere il gioco meno noioso (impatto, combo, pattern, ritmo) | Quando il gioco è piatto, noioso o "sempre uguale" |
+| **visual-artist** | Direttore artistico neon: eleva l'estetica in canvas 2D (glow a strati, gradienti, sfondo vivo, trail) | Quando il gioco è graficamente banale o spento |
 | **regression-tester** | Esegue test e verifica l'assenza di regressioni | Prima di pubblicare una release |
 | **test-author** | Crea nuovi test case man mano che arrivano nuovi sviluppi | Dopo aver aggiunto una feature o un fix |
 | **game-director** | Meta-agente "regista": valuta la qualità, decide da solo quali agenti servono, li crea e li orchestra | Quando vuoi portare il gioco a un livello superiore |
