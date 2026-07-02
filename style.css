@@ -1,0 +1,35 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  background: #05060f;
+  color: #cde;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+#game-wrapper {
+  box-shadow: 0 0 40px rgba(0, 200, 255, 0.25), 0 0 8px rgba(255, 0, 200, 0.2);
+  border-radius: 8px;
+  line-height: 0;
+}
+
+canvas {
+  background: #05060f;
+  border-radius: 8px;
+  display: block;
+  max-width: 100%;
+  cursor: crosshair;
+}
+
+.hint {
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: #7a8bb0;
+  user-select: none;
+}

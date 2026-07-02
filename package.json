@@ -1,0 +1,12 @@
+{
+  "name": "neon-space-shooter",
+  "version": "0.1.0",
+  "description": "Neon Space Shooter — uno space shooter arcade 2D in canvas + JavaScript vanilla.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8123",
+    "test": "node --test"
+  },
+  "keywords": ["game", "canvas", "arcade", "shooter", "neon"],
+  "license": "MIT"
+}
