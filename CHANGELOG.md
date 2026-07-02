@@ -5,6 +5,16 @@ Il formato segue una versione semplificata di [Keep a Changelog](https://keepach
 
 ## [Non rilasciato]
 
+### Creature spaziali + bilanciamento boss
+- I nemici non sono più forme geometriche ma vere **creature spaziali** animate
+  (nuovo modulo `js/creatures.js`): medusa aliena (straight), falena/pipistrello
+  spaziale con ali che sbattono (zigzag), occhio fluttuante con tentacoli e blink
+  (shooter), e un **kraken/cervello a un occhio** per il boss.
+- **Boss ribilanciato** (era imbattibile): meno HP (`32 + 9·livello`), fase 2 solo
+  sotto il 33% di vita, spirale più rada e lenta, ventaglio più stretto e proiettili
+  più lenti (`js/enemies.js`).
+- Hook di sviluppo `?showcase=1` per vedere tutte le creature + boss (screenshot).
+
 ### Grafica (contro l'aspetto "banale")
 - Nuova palette neon centrale in `js/palette.js`, usata al posto degli hex sparsi.
 - Sfondo vivo: nebulosa a gradiente (canvas offscreen) + stelle su 3 layer con

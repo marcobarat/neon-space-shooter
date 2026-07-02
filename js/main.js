@@ -472,6 +472,19 @@ if (new URLSearchParams(location.search).get("autostart") === "1") {
   spawnWave();
 }
 
+// Hook di sviluppo: ?showcase=1 mostra una di ogni creatura + il boss, ferme,
+// per verificare l'arte (screenshot). Non usato in gioco normale.
+if (new URLSearchParams(location.search).get("showcase") === "1") {
+  startPlaying();
+  const e1 = new Enemy("straight", 160, W, 0); e1.y = 220; e1.speed = 0;
+  const e2 = new Enemy("zigzag", 320, W, 0); e2.y = 220; e2.speed = 0;
+  const e3 = new Enemy("shooter", 480, W, 0); e3.y = 220; e3.speed = 0;
+  game.enemies.push(e1, e2, e3);
+  game.boss = new Boss(W, 1);
+  game.boss.entering = false;
+  game.boss.y = 420;
+}
+
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.033, (now - last) / 1000);

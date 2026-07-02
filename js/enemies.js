@@ -4,12 +4,7 @@ import { rand, TAU } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
-
-const COLORS = {
-  straight: PALETTE.straight,
-  zigzag: PALETTE.zigzag,
-  shooter: PALETTE.shooter,
-};
+import { drawStraight, drawZigzag, drawShooter, drawBoss } from "./creatures.js";
 
 export class Enemy {
   constructor(type, x, w, variant = 0) {
@@ -90,44 +85,10 @@ export class Enemy {
   }
 
   draw(ctx) {
-    const base = COLORS[this.type];
-    ctx.save();
-    ctx.translate(this.x, this.y);
-
-    // Alone luminoso a strati.
-    ctx.shadowColor = base;
-    ctx.shadowBlur = 18;
-
-    // Riempimento a gradiente radiale (nucleo chiaro → colore).
-    const g = ctx.createRadialGradient(0, -4, 1, 0, 0, this.r + 4);
-    g.addColorStop(0, this.hitFlash > 0 ? "#ffffff" : "#ffffff");
-    g.addColorStop(0.35, this.hitFlash > 0 ? "#ffffff" : base);
-    g.addColorStop(1, base);
-    ctx.fillStyle = this.hitFlash > 0 ? "#ffffff" : g;
-
-    ctx.beginPath();
-    if (this.type === "straight") {
-      ctx.moveTo(0, 15);
-      ctx.lineTo(14, 0);
-      ctx.lineTo(0, -15);
-      ctx.lineTo(-14, 0);
-    } else if (this.type === "zigzag") {
-      ctx.moveTo(0, 14);
-      ctx.lineTo(15, -12);
-      ctx.lineTo(-15, -12);
-    } else {
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * TAU + this.t; // esagono rotante
-        const px = Math.cos(a) * 15;
-        const py = Math.sin(a) * 15;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    ctx.shadowBlur = 0;
+    // Delega il disegno alla "creatura" corrispondente al tipo.
+    if (this.type === "straight") drawStraight(ctx, this);
+    else if (this.type === "zigzag") drawZigzag(ctx, this);
+    else drawShooter(ctx, this);
   }
 }
 
@@ -137,7 +98,7 @@ export class Boss {
     this.x = w / 2;
     this.y = -60;
     this.r = 46;
-    this.maxHp = 40 + level * 12;
+    this.maxHp = 32 + level * 9; // ridotto: più abbordabile
     this.hp = this.maxHp;
     this.dead = false;
     this.hitFlash = 0;
@@ -150,7 +111,7 @@ export class Boss {
   }
 
   get enraged() {
-    return this.hp <= this.maxHp * 0.4; // 2ª fase sotto il 40% di vita
+    return this.hp <= this.maxHp * 0.33; // 2ª fase solo sotto il 33% di vita
   }
 
   update(dt, enemyBullets, targetX) {
@@ -160,21 +121,21 @@ export class Boss {
       if (this.y >= 90) this.entering = false;
       return;
     }
-    // Fase 2: si muove più veloce.
-    const spd = this.enraged ? 1.4 : 0.8;
+    // Fase 2: si muove un po' più veloce (ma non frenetico).
+    const spd = this.enraged ? 1.05 : 0.8;
     this.x = this.w / 2 + Math.sin(this.t * spd) * (this.w / 2 - 80);
     this.hitFlash = Math.max(0, this.hitFlash - dt);
 
     this.fireTimer -= dt;
     if (this.fireTimer <= 0) {
       if (this.enraged) {
-        // Fase 2: spirale rotante di proiettili.
-        this.fireTimer = 0.14;
-        this.spiralAngle += 0.42;
-        for (let k = 0; k < 3; k++) {
-          const ang = this.spiralAngle + k * (TAU / 3);
+        // Fase 2: spirale rotante, ma RADA e lenta -> schivabile.
+        this.fireTimer = 0.32;
+        this.spiralAngle += 0.55;
+        for (let k = 0; k < 2; k++) {
+          const ang = this.spiralAngle + k * Math.PI;
           enemyBullets.push(
-            new Bullet(this.x, this.y, Math.cos(ang) * 230, Math.abs(Math.sin(ang)) * 120 + 140, {
+            new Bullet(this.x, this.y, Math.cos(ang) * 150, Math.abs(Math.sin(ang)) * 90 + 120, {
               color: PALETTE.boss,
               r: 6,
               friendly: false,
@@ -182,13 +143,13 @@ export class Boss {
           );
         }
       } else {
-        // Fase 1: ventaglio + colpo mirato.
-        this.fireTimer = 1.1;
-        const n = 7;
+        // Fase 1: ventaglio più stretto e lento + colpo mirato.
+        this.fireTimer = 1.5;
+        const n = 5;
         for (let i = 0; i < n; i++) {
-          const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.28;
+          const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.26;
           enemyBullets.push(
-            new Bullet(this.x, this.y + 30, Math.cos(ang) * 240, Math.sin(ang) * 240, {
+            new Bullet(this.x, this.y + 30, Math.cos(ang) * 190, Math.sin(ang) * 190, {
               color: PALETTE.boss,
               r: 6,
               friendly: false,
@@ -199,7 +160,7 @@ export class Boss {
         const dy = 320;
         const m = Math.hypot(dx, dy) || 1;
         enemyBullets.push(
-          new Bullet(this.x, this.y + 30, (dx / m) * 300, (dy / m) * 300, {
+          new Bullet(this.x, this.y + 30, (dx / m) * 240, (dy / m) * 240, {
             color: PALETTE.combo,
             r: 6,
             friendly: false,
@@ -219,39 +180,8 @@ export class Boss {
 
   draw(ctx) {
     const enraged = this.enraged;
-    const base = this.hitFlash > 0 ? "#ffffff" : PALETTE.boss;
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.shadowColor = PALETTE.boss;
-    ctx.shadowBlur = enraged ? 40 : 30;
-
-    const g = ctx.createRadialGradient(0, 0, 4, 0, 0, this.r);
-    g.addColorStop(0, "#ffffff");
-    g.addColorStop(0.4, base);
-    g.addColorStop(1, PALETTE.boss);
-    ctx.fillStyle = this.hitFlash > 0 ? "#ffffff" : g;
-
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * TAU + this.t * (enraged ? 1.2 : 0.4);
-      const rad = i % 2 === 0 ? this.r : this.r * 0.7;
-      const px = Math.cos(a) * rad;
-      const py = Math.sin(a) * rad * 0.7;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fill();
-
-    // Occhio centrale pulsante.
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = PALETTE.bossEye;
-    const eye = 12 + (enraged ? Math.sin(this.t * 12) * 3 : 0);
-    ctx.beginPath();
-    ctx.arc(0, 0, eye, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-    ctx.shadowBlur = 0;
+    // Corpo del kraken/cervello disegnato dal modulo creature.
+    drawBoss(ctx, this, enraged);
 
     // Barra vita in alto.
     const bw = 400;
