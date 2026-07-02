@@ -29,3 +29,6 @@ Prima versione giocabile di **Neon Space Shooter**.
 ### Strumenti
 - Aggiunti tre agenti di sviluppo in `.claude/agents/`: `feature-scout`,
   `regression-tester`, `test-author`.
+- Aggiunto il meta-agente `game-director`: valuta le dimensioni di qualità del gioco,
+  decide autonomamente quali agenti specialisti servono, li crea se mancano e ne
+  orchestra il lavoro verso un gioco qualitativamente perfetto.

@@ -46,6 +46,7 @@ release del gioco:
 | **feature-scout** | Trae ispirazione dalle tendenze e propone feature fighe per i ragazzi del 2026 | Dopo una release, per decidere cosa costruire dopo |
 | **regression-tester** | Esegue test e verifica l'assenza di regressioni | Prima di pubblicare una release |
 | **test-author** | Crea nuovi test case man mano che arrivano nuovi sviluppi | Dopo aver aggiunto una feature o un fix |
+| **game-director** | Meta-agente "regista": valuta la qualità, decide da solo quali agenti servono, li crea e li orchestra | Quando vuoi portare il gioco a un livello superiore |
 
 Da Claude Code puoi invocarli per nome (es. *"usa l'agente feature-scout per proporre idee
 per la prossima release"*).
