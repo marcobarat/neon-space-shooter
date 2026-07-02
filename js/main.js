@@ -6,6 +6,7 @@ import { Player } from "./player.js";
 import { Enemy, Boss } from "./enemies.js";
 import { PowerUp } from "./powerups.js";
 import { ParticleSystem } from "./particles.js";
+import { PALETTE, FONT, FONT_MONO } from "./palette.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -18,12 +19,49 @@ onFirstInteraction(unlockAudio);
 const HS_KEY = "neon_space_shooter_highscore";
 const State = { MENU: "menu", PLAY: "play", GAMEOVER: "gameover" };
 
-// Stelle di sfondo in parallasse (persistono tra gli stati).
-const stars = Array.from({ length: 90 }, () => ({
-  x: rand(0, W),
-  y: rand(0, H),
-  z: rand(0.3, 1),
-}));
+// Stelle di sfondo su 3 layer con parallasse + twinkle (persistono tra gli stati).
+const stars = Array.from({ length: 150 }, () => {
+  const z = rand(0.2, 1);
+  return {
+    x: rand(0, W),
+    y: rand(0, H),
+    z,
+    size: z < 0.5 ? 1 : z < 0.8 ? 1.6 : 2.4,
+    tw: rand(0, TAU),      // fase del twinkle
+    twSpeed: rand(1.5, 4), // velocità del twinkle
+  };
+});
+
+// Nebulosa di sfondo disegnata UNA volta su un canvas offscreen (performance).
+const bgCanvas = document.createElement("canvas");
+bgCanvas.width = W;
+bgCanvas.height = H;
+(function buildBackground() {
+  const bg = bgCanvas.getContext("2d");
+  const grad = bg.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, PALETTE.bgTop);
+  grad.addColorStop(1, PALETTE.bgBottom);
+  bg.fillStyle = grad;
+  bg.fillRect(0, 0, W, H);
+  // Macchie di nebulosa (radial gradient) per dare profondità e colore.
+  const blobs = [
+    { x: W * 0.25, y: H * 0.3, r: 320, c: PALETTE.nebulaA },
+    { x: W * 0.8, y: H * 0.2, r: 280, c: PALETTE.nebulaB },
+    { x: W * 0.6, y: H * 0.75, r: 360, c: PALETTE.nebulaC },
+    { x: W * 0.1, y: H * 0.85, r: 240, c: PALETTE.nebulaB },
+  ];
+  for (const b of blobs) {
+    const g = bg.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    g.addColorStop(0, b.c);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    bg.fillStyle = g;
+    bg.beginPath();
+    bg.arc(b.x, b.y, b.r, 0, TAU);
+    bg.fill();
+  }
+})();
+
+let bgTime = 0; // tempo globale per il twinkle
 
 let game;
 
@@ -41,8 +79,25 @@ function newGame() {
     waveCooldown: 1.2,
     boss: null,
     highScore: Number(localStorage.getItem(HS_KEY) || 0),
-    flash: 0, // flash bianco schermo quando il player viene colpito
+    flash: 0,       // flash bianco schermo quando il player viene colpito
+    combo: 0,       // uccisioni in catena
+    comboTimer: 0,  // tempo rimasto prima che la combo scada
+    hitStop: 0,     // freeze breve del gameplay per dare "peso" ai colpi
+    popups: [],     // scritte fluttuanti (punteggio, combo)
   };
+}
+
+// Moltiplicatore in base alla combo: x1, x1.5 (5), x2 (10), x3 (20)...
+function comboMult() {
+  const c = game.combo;
+  if (c >= 20) return 3;
+  if (c >= 10) return 2;
+  if (c >= 5) return 1.5;
+  return 1;
+}
+
+function addPopup(x, y, text, color) {
+  game.popups.push({ x, y, text, color, life: 0.9, vy: -46 });
 }
 game = newGame();
 
@@ -68,17 +123,26 @@ function spawnWave() {
   for (let i = 0; i < count; i++) {
     const type = types[randInt(0, types.length - 1)];
     const x = rand(50, W - 50);
-    const e = new Enemy(type, x, W);
+    // Dalla 3ª ondata compaiono varianti (pattern alternativo) con prob. crescente.
+    const variant = game.wave >= 3 && Math.random() < 0.4 ? 1 : 0;
+    const e = new Enemy(type, x, W, variant);
     e.y = -30 - rand(0, 300); // sfalsati in verticale
     game.enemies.push(e);
   }
 }
 
-function addScore(n) {
-  game.score += n;
+// Aggiunge punteggio applicando il moltiplicatore combo; mostra uno score-pop.
+function addScore(base, x, y) {
+  const mult = comboMult();
+  const gained = Math.round(base * mult);
+  game.score += gained;
   if (game.score > game.highScore) {
     game.highScore = game.score;
     localStorage.setItem(HS_KEY, String(game.highScore));
+  }
+  if (x !== undefined) {
+    const txt = mult > 1 ? `+${gained} x${mult}` : `+${gained}`;
+    addPopup(x, y, txt, mult > 1 ? PALETTE.combo : PALETTE.ui);
   }
 }
 
@@ -93,15 +157,36 @@ function updateStars(dt) {
 }
 
 function update(dt) {
+  bgTime += dt;
   updateStars(dt);
   game.particles.update(dt);
   game.flash = Math.max(0, game.flash - dt * 3);
+
+  // Scritte fluttuanti (score-pop): vivono anche fuori dallo stato PLAY.
+  for (const pu of game.popups) {
+    pu.y += pu.vy * dt;
+    pu.vy *= 0.9;
+    pu.life -= dt;
+  }
+  game.popups = game.popups.filter((p) => p.life > 0);
 
   if (game.state !== State.PLAY) {
     if (consumeStart()) {
       if (game.state === State.MENU || game.state === State.GAMEOVER) startPlaying();
     }
     return;
+  }
+
+  // Hit-stop: congela brevemente il gameplay per dare peso ai colpi/kill.
+  if (game.hitStop > 0) {
+    game.hitStop = Math.max(0, game.hitStop - dt);
+    return;
+  }
+
+  // Decadimento della combo.
+  if (game.combo > 0) {
+    game.comboTimer -= dt;
+    if (game.comboTimer <= 0) game.combo = 0;
   }
 
   const p = game.player;
@@ -138,10 +223,14 @@ function update(dt) {
 }
 
 function killEnemy(e) {
-  game.particles.burst(e.x, e.y, e.isBoss ? "#ff3860" : "#ffd23f", e.isBoss ? 60 : 20);
-  game.particles.addShake(e.isBoss ? 20 : 6);
+  game.particles.burst(e.x, e.y, e.isBoss ? PALETTE.boss : PALETTE.zigzag, e.isBoss ? 70 : 22);
+  game.particles.addShake(e.isBoss ? 22 : 7);
+  game.hitStop = Math.max(game.hitStop, e.isBoss ? 0.11 : 0.045); // peso del colpo
   sfx.explosion();
-  addScore(e.score);
+  // Combo: sale a ogni kill, si azzera se passa troppo tempo tra un kill e l'altro.
+  game.combo += 1;
+  game.comboTimer = 2.2;
+  addScore(e.score, e.x, e.y);
   // Chance di drop power-up.
   const chance = e.isBoss ? 1 : 0.12;
   if (Math.random() < chance) {
@@ -216,28 +305,61 @@ function damagePlayer() {
 
 function drawStars() {
   for (const s of stars) {
-    ctx.globalAlpha = s.z;
-    ctx.fillStyle = "#9fbfff";
-    ctx.fillRect(s.x, s.y, s.z * 2, s.z * 2);
+    const tw = 0.6 + 0.4 * Math.sin(bgTime * s.twSpeed + s.tw);
+    ctx.globalAlpha = Math.min(1, s.z * tw);
+    if (s.size > 2) {
+      ctx.fillStyle = PALETTE.starBright;
+      ctx.shadowColor = PALETTE.star;
+      ctx.shadowBlur = 6;
+    } else {
+      ctx.fillStyle = PALETTE.star;
+      ctx.shadowBlur = 0;
+    }
+    ctx.fillRect(s.x, s.y, s.size, s.size);
   }
   ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function drawPopups() {
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold 16px ${FONT_MONO}`;
+  for (const p of game.popups) {
+    ctx.globalAlpha = Math.min(1, p.life / 0.6);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
 }
 
 function drawHUD() {
-  ctx.fillStyle = "#cde";
-  ctx.font = "16px system-ui, sans-serif";
-  ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(`PUNTI ${game.score}`, 16, 14);
-  ctx.fillText(`ONDATA ${game.wave}`, 16, 36);
+  ctx.shadowBlur = 0;
 
-  // Vite come piccole navicelle.
+  // Punteggio (grande, monospace) + ondata.
+  ctx.textAlign = "left";
+  ctx.fillStyle = PALETTE.ui;
+  ctx.font = `bold 22px ${FONT_MONO}`;
+  ctx.fillText(String(game.score).padStart(6, "0"), 16, 12);
+  ctx.font = `11px ${FONT_MONO}`;
+  ctx.fillStyle = PALETTE.uiDim;
+  ctx.fillText(`ONDATA ${game.wave}`, 16, 40);
+
+  // Record + vite a destra.
   ctx.textAlign = "right";
-  ctx.fillText(`RECORD ${game.highScore}`, W - 16, 14);
+  ctx.fillStyle = PALETTE.uiDim;
+  ctx.font = `11px ${FONT_MONO}`;
+  ctx.fillText(`RECORD ${String(game.highScore).padStart(6, "0")}`, W - 16, 14);
   for (let i = 0; i < game.player.lives; i++) {
-    const x = W - 24 - i * 26;
+    const x = W - 24 - i * 24;
     const y = 44;
-    ctx.fillStyle = "#00e5ff";
+    ctx.fillStyle = PALETTE.player;
+    ctx.shadowColor = PALETTE.player;
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.moveTo(x, y - 9);
     ctx.lineTo(x + 7, y + 7);
@@ -245,11 +367,39 @@ function drawHUD() {
     ctx.closePath();
     ctx.fill();
   }
+  ctx.shadowBlur = 0;
 
+  // Combo al centro in alto, con barra del timer.
+  if (game.combo >= 2) {
+    const mult = comboMult();
+    const t = Math.max(0, Math.min(1, game.comboTimer / 2.2));
+    ctx.textAlign = "center";
+    ctx.fillStyle = PALETTE.combo;
+    ctx.shadowColor = PALETTE.combo;
+    ctx.shadowBlur = 12;
+    const size = mult > 1 ? 22 + Math.sin(bgTime * 10) * 2 : 18;
+    ctx.font = `bold ${size}px ${FONT_MONO}`;
+    ctx.fillText(`COMBO ${game.combo}  x${mult}`, W / 2, 12);
+    ctx.shadowBlur = 0;
+    const bw = 170;
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.fillRect(W / 2 - bw / 2, 42, bw, 4);
+    ctx.fillStyle = PALETTE.combo;
+    ctx.fillRect(W / 2 - bw / 2, 42, bw * t, 4);
+  }
+
+  // Power-up attivi.
+  let py = 58;
+  ctx.textAlign = "left";
+  ctx.font = `11px ${FONT_MONO}`;
   if (game.player.tripleTime > 0) {
-    ctx.fillStyle = "#7df9ff";
-    ctx.textAlign = "left";
-    ctx.fillText(`TRIPLO ${Math.ceil(game.player.tripleTime)}s`, 16, 60);
+    ctx.fillStyle = PALETTE.triple;
+    ctx.fillText(`TRIPLO ${Math.ceil(game.player.tripleTime)}s`, 16, py);
+    py += 16;
+  }
+  if (game.player.shieldTime > 0) {
+    ctx.fillStyle = PALETTE.shield;
+    ctx.fillText(`SCUDO ${Math.ceil(game.player.shieldTime)}s`, 16, py);
   }
 }
 
@@ -257,17 +407,19 @@ function drawCenteredText(lines) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   lines.forEach((l) => {
-    ctx.fillStyle = l.color || "#cde";
-    ctx.shadowColor = l.color || "#7df9ff";
-    ctx.shadowBlur = l.glow ? 20 : 0;
-    ctx.font = l.font || "20px system-ui, sans-serif";
+    ctx.fillStyle = l.color || PALETTE.ui;
+    ctx.shadowColor = l.color || PALETTE.player;
+    ctx.shadowBlur = l.glow ? 24 : 0;
+    ctx.font = l.font || `20px ${FONT}`;
     ctx.fillText(l.text, W / 2, l.y);
   });
   ctx.shadowBlur = 0;
 }
 
 function render() {
-  ctx.clearRect(0, 0, W, H);
+  // Sfondo statico (nebulosa) disegnato dal canvas offscreen: niente black edges.
+  ctx.drawImage(bgCanvas, 0, 0);
+
   ctx.save();
   game.particles.applyShake(ctx);
 
@@ -282,12 +434,13 @@ function render() {
     game.particles.draw(ctx);
     if (game.state === State.PLAY) game.player.draw(ctx);
   }
+  drawPopups();
 
   ctx.restore();
 
-  // Flash bianco quando colpito.
+  // Flash bianco quando colpito (contenuto per accessibilità).
   if (game.flash > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${game.flash * 0.4})`;
+    ctx.fillStyle = `rgba(255,255,255,${game.flash * 0.35})`;
     ctx.fillRect(0, 0, W, H);
   }
 
@@ -295,21 +448,29 @@ function render() {
 
   if (game.state === State.MENU) {
     drawCenteredText([
-      { text: "NEON SPACE SHOOTER", y: H / 2 - 70, font: "bold 44px system-ui, sans-serif", color: "#00e5ff", glow: true },
-      { text: "Premi un tasto o clicca per iniziare", y: H / 2 + 10, color: "#cde" },
-      { text: "Frecce/WASD o mouse per muoverti — Spazio o click per sparare", y: H / 2 + 44, font: "14px system-ui, sans-serif", color: "#7a8bb0" },
+      { text: "NEON SPACE SHOOTER", y: H / 2 - 70, font: `bold 46px ${FONT}`, color: PALETTE.player, glow: true },
+      { text: "Premi un tasto o clicca per iniziare", y: H / 2 + 10, color: PALETTE.ui },
+      { text: "Frecce/WASD o mouse per muoverti — Spazio o click per sparare", y: H / 2 + 44, font: `13px ${FONT}`, color: PALETTE.uiDim },
+      { text: "Incatena le uccisioni per far salire la COMBO e moltiplicare i punti!", y: H / 2 + 70, font: `13px ${FONT}`, color: PALETTE.combo },
     ]);
   } else if (game.state === State.GAMEOVER) {
     drawCenteredText([
-      { text: "GAME OVER", y: H / 2 - 60, font: "bold 46px system-ui, sans-serif", color: "#ff3860", glow: true },
-      { text: `Punteggio: ${game.score}`, y: H / 2, font: "24px system-ui, sans-serif", color: "#cde" },
-      { text: `Record: ${game.highScore}`, y: H / 2 + 34, color: "#ffd23f" },
-      { text: "Premi un tasto o clicca per riprovare", y: H / 2 + 78, color: "#7a8bb0" },
+      { text: "GAME OVER", y: H / 2 - 60, font: `bold 48px ${FONT}`, color: PALETTE.boss, glow: true },
+      { text: `Punteggio: ${game.score}`, y: H / 2, font: `24px ${FONT}`, color: PALETTE.ui },
+      { text: `Record: ${game.highScore}`, y: H / 2 + 34, color: PALETTE.combo },
+      { text: "Premi un tasto o clicca per riprovare", y: H / 2 + 78, color: PALETTE.uiDim },
     ]);
   }
 }
 
 // ---------- LOOP ----------
+
+// Hook di sviluppo: ?autostart=1 salta al gioco e lancia subito un'ondata
+// (comodo per screenshot/test automatici, innocuo per il giocatore).
+if (new URLSearchParams(location.search).get("autostart") === "1") {
+  startPlaying();
+  spawnWave();
+}
 
 let last = performance.now();
 function loop(now) {

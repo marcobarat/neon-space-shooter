@@ -5,6 +5,23 @@ Il formato segue una versione semplificata di [Keep a Changelog](https://keepach
 
 ## [Non rilasciato]
 
+### Grafica (contro l'aspetto "banale")
+- Nuova palette neon centrale in `js/palette.js`, usata al posto degli hex sparsi.
+- Sfondo vivo: nebulosa a gradiente (canvas offscreen) + stelle su 3 layer con
+  parallasse e twinkle, al posto dei "puntini su nero" (`js/main.js`).
+- Glow a strati e gradienti su navicella, nemici e boss; muzzle flash e rinculo
+  sullo sparo (`js/player.js`, `js/enemies.js`).
+- Proiettili con scia luminosa (`js/bullets.js`).
+- HUD ridisegnato a tema (monospace, punteggio grande, vite luminose).
+
+### Divertimento / varietà (contro la "noia")
+- Sistema **combo/moltiplicatore**: uccisioni in catena aumentano la combo
+  (x1 → x1.5 → x2 → x3) con score-pop fluttuanti e barra del timer (`js/main.js`).
+- **Hit-stop**: micro-freeze del gameplay a ogni uccisione per dare peso ai colpi.
+- **Varianti di pattern** per i tre tipi di nemico (deriva, accelerazione, raffica)
+  e **boss a due fasi** con spirale di proiettili sotto il 40% di vita (`js/enemies.js`).
+- Hook di sviluppo `?autostart=1` per avviare subito una partita (test/screenshot).
+
 ### Strumenti
 - Il `game-director` ha valutato lo stato del gioco a fronte del feedback del proprietario
   ("carino ma estremamente noioso e graficamente banale") e ha creato due nuovi agenti

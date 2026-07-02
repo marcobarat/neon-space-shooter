@@ -1,17 +1,20 @@
-// Nemici: tre tipi base (dritto, zigzag, sparatore) + un boss.
+// Nemici: tre tipi (dritto, zigzag, sparatore) con due VARIANTI di pattern
+// ciascuno, più un boss a due fasi. Estetica neon con gradienti e glow a strati.
 import { rand, TAU } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
+import { PALETTE } from "./palette.js";
 
 const COLORS = {
-  straight: "#ff5bd0",
-  zigzag: "#ffd23f",
-  shooter: "#8b5bff",
+  straight: PALETTE.straight,
+  zigzag: PALETTE.zigzag,
+  shooter: PALETTE.shooter,
 };
 
 export class Enemy {
-  constructor(type, x, w) {
+  constructor(type, x, w, variant = 0) {
     this.type = type;
+    this.variant = variant;
     this.x = x;
     this.y = -30;
     this.w = w;
@@ -28,24 +31,53 @@ export class Enemy {
 
   update(dt, enemyBullets, targetX) {
     this.t += dt;
-    this.y += this.speed * dt;
+
+    // Movimento orizzontale in base a tipo/variante.
     if (this.type === "zigzag") {
-      this.x = this.baseX + Math.sin(this.t * 2.5) * 90;
-    } else if (this.type === "shooter") {
+      if (this.variant === 1) this.speed += 45 * dt; // variante: accelera scendendo
+      const amp = this.variant === 1 ? 60 : 90;
+      const freq = this.variant === 1 ? 3.4 : 2.5;
+      this.x = this.baseX + Math.sin(this.t * freq) * amp;
+    } else if (this.type === "straight" && this.variant === 1) {
+      // variante: deriva lentamente di lato invece che dritto.
+      this.x = this.baseX + Math.sin(this.t * 1.5) * 45;
+    }
+
+    this.y += this.speed * dt;
+
+    if (this.type === "shooter") {
       this.fireTimer -= dt;
       if (this.fireTimer <= 0 && this.y > 0 && this.y < this.w) {
-        this.fireTimer = rand(1.5, 3);
-        const ang = Math.atan2(1, (targetX - this.x) / 260);
-        enemyBullets.push(
-          new Bullet(this.x, this.y + 12, Math.cos(ang) * 220 * Math.sign(targetX - this.x || 1), 240, {
-            color: COLORS.shooter,
-            r: 5,
-            friendly: false,
-          })
-        );
+        if (this.variant === 1) {
+          // variante: raffica a ventaglio di 3 colpi.
+          this.fireTimer = rand(2.2, 3.2);
+          for (let k = -1; k <= 1; k++) {
+            enemyBullets.push(
+              new Bullet(this.x, this.y + 12, k * 130, 240, {
+                color: PALETTE.enemyBullet,
+                r: 5,
+                friendly: false,
+              })
+            );
+          }
+        } else {
+          // base: singolo colpo mirato al player.
+          this.fireTimer = rand(1.5, 3);
+          const dx = targetX - this.x;
+          const dy = 300;
+          const m = Math.hypot(dx, dy) || 1;
+          enemyBullets.push(
+            new Bullet(this.x, this.y + 12, (dx / m) * 260, (dy / m) * 260, {
+              color: PALETTE.shooter,
+              r: 5,
+              friendly: false,
+            })
+          );
+        }
         sfx.enemyLaser();
       }
     }
+
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     if (this.y > 660) this.dead = true; // uscito dallo schermo
   }
@@ -58,28 +90,34 @@ export class Enemy {
   }
 
   draw(ctx) {
-    const c = this.hitFlash > 0 ? "#ffffff" : COLORS[this.type];
+    const base = COLORS[this.type];
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.fillStyle = c;
-    ctx.shadowColor = COLORS[this.type];
-    ctx.shadowBlur = 16;
+
+    // Alone luminoso a strati.
+    ctx.shadowColor = base;
+    ctx.shadowBlur = 18;
+
+    // Riempimento a gradiente radiale (nucleo chiaro → colore).
+    const g = ctx.createRadialGradient(0, -4, 1, 0, 0, this.r + 4);
+    g.addColorStop(0, this.hitFlash > 0 ? "#ffffff" : "#ffffff");
+    g.addColorStop(0.35, this.hitFlash > 0 ? "#ffffff" : base);
+    g.addColorStop(1, base);
+    ctx.fillStyle = this.hitFlash > 0 ? "#ffffff" : g;
+
     ctx.beginPath();
     if (this.type === "straight") {
-      // rombo
       ctx.moveTo(0, 15);
       ctx.lineTo(14, 0);
       ctx.lineTo(0, -15);
       ctx.lineTo(-14, 0);
     } else if (this.type === "zigzag") {
-      // triangolo rovesciato
       ctx.moveTo(0, 14);
       ctx.lineTo(15, -12);
       ctx.lineTo(-15, -12);
     } else {
-      // esagono per lo sparatore
       for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * TAU;
+        const a = (i / 6) * TAU + this.t; // esagono rotante
         const px = Math.cos(a) * 15;
         const py = Math.sin(a) * 15;
         if (i === 0) ctx.moveTo(px, py);
@@ -104,11 +142,15 @@ export class Boss {
     this.dead = false;
     this.hitFlash = 0;
     this.t = 0;
-    this.phase = 0;
     this.fireTimer = 1.5;
+    this.spiralAngle = 0;
     this.entering = true;
     this.score = 2000 + level * 500;
     this.isBoss = true;
+  }
+
+  get enraged() {
+    return this.hp <= this.maxHp * 0.4; // 2ª fase sotto il 40% di vita
   }
 
   update(dt, enemyBullets, targetX) {
@@ -118,35 +160,53 @@ export class Boss {
       if (this.y >= 90) this.entering = false;
       return;
     }
-    // Movimento a onda sinusoidale orizzontale.
-    this.x = this.w / 2 + Math.sin(this.t * 0.8) * (this.w / 2 - 80);
+    // Fase 2: si muove più veloce.
+    const spd = this.enraged ? 1.4 : 0.8;
+    this.x = this.w / 2 + Math.sin(this.t * spd) * (this.w / 2 - 80);
     this.hitFlash = Math.max(0, this.hitFlash - dt);
 
     this.fireTimer -= dt;
     if (this.fireTimer <= 0) {
-      this.fireTimer = 1.1;
-      // Spara un ventaglio di proiettili.
-      const n = 7;
-      for (let i = 0; i < n; i++) {
-        const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.28;
+      if (this.enraged) {
+        // Fase 2: spirale rotante di proiettili.
+        this.fireTimer = 0.14;
+        this.spiralAngle += 0.42;
+        for (let k = 0; k < 3; k++) {
+          const ang = this.spiralAngle + k * (TAU / 3);
+          enemyBullets.push(
+            new Bullet(this.x, this.y, Math.cos(ang) * 230, Math.abs(Math.sin(ang)) * 120 + 140, {
+              color: PALETTE.boss,
+              r: 6,
+              friendly: false,
+            })
+          );
+        }
+      } else {
+        // Fase 1: ventaglio + colpo mirato.
+        this.fireTimer = 1.1;
+        const n = 7;
+        for (let i = 0; i < n; i++) {
+          const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.28;
+          enemyBullets.push(
+            new Bullet(this.x, this.y + 30, Math.cos(ang) * 240, Math.sin(ang) * 240, {
+              color: PALETTE.boss,
+              r: 6,
+              friendly: false,
+            })
+          );
+        }
+        const dx = targetX - this.x;
+        const dy = 320;
+        const m = Math.hypot(dx, dy) || 1;
         enemyBullets.push(
-          new Bullet(this.x, this.y + 30, Math.cos(ang) * 240, Math.sin(ang) * 240, {
-            color: "#ff3860",
+          new Bullet(this.x, this.y + 30, (dx / m) * 300, (dy / m) * 300, {
+            color: PALETTE.combo,
             r: 6,
             friendly: false,
           })
         );
+        sfx.enemyLaser();
       }
-      // E un colpo mirato al player.
-      const ax = Math.atan2(1, (targetX - this.x) / 300);
-      enemyBullets.push(
-        new Bullet(this.x, this.y + 30, Math.sign(targetX - this.x || 1) * Math.cos(ax) * 260, 300, {
-          color: "#ffd23f",
-          r: 6,
-          friendly: false,
-        })
-      );
-      sfx.enemyLaser();
     }
   }
 
@@ -158,16 +218,22 @@ export class Boss {
   }
 
   draw(ctx) {
-    const c = this.hitFlash > 0 ? "#ffffff" : "#ff3860";
+    const enraged = this.enraged;
+    const base = this.hitFlash > 0 ? "#ffffff" : PALETTE.boss;
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.fillStyle = c;
-    ctx.shadowColor = "#ff3860";
-    ctx.shadowBlur = 30;
+    ctx.shadowColor = PALETTE.boss;
+    ctx.shadowBlur = enraged ? 40 : 30;
+
+    const g = ctx.createRadialGradient(0, 0, 4, 0, 0, this.r);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.4, base);
+    g.addColorStop(1, PALETTE.boss);
+    ctx.fillStyle = this.hitFlash > 0 ? "#ffffff" : g;
+
     ctx.beginPath();
-    // Corpo a otto lati, minaccioso.
     for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * TAU;
+      const a = (i / 8) * TAU + this.t * (enraged ? 1.2 : 0.4);
       const rad = i % 2 === 0 ? this.r : this.r * 0.7;
       const px = Math.cos(a) * rad;
       const py = Math.sin(a) * rad * 0.7;
@@ -176,10 +242,13 @@ export class Boss {
     }
     ctx.closePath();
     ctx.fill();
-    // occhio centrale
-    ctx.fillStyle = "#ffd23f";
+
+    // Occhio centrale pulsante.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = PALETTE.bossEye;
+    const eye = 12 + (enraged ? Math.sin(this.t * 12) * 3 : 0);
     ctx.beginPath();
-    ctx.arc(0, 0, 12, 0, TAU);
+    ctx.arc(0, 0, eye, 0, TAU);
     ctx.fill();
     ctx.restore();
     ctx.shadowBlur = 0;
@@ -189,9 +258,9 @@ export class Boss {
     const bx = this.w / 2 - bw / 2;
     ctx.fillStyle = "rgba(255,255,255,0.15)";
     ctx.fillRect(bx, 16, bw, 10);
-    ctx.fillStyle = "#ff3860";
-    ctx.shadowColor = "#ff3860";
-    ctx.shadowBlur = 10;
+    ctx.fillStyle = enraged ? PALETTE.combo : PALETTE.boss;
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 12;
     ctx.fillRect(bx, 16, bw * Math.max(0, this.hp / this.maxHp), 10);
     ctx.shadowBlur = 0;
   }

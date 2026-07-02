@@ -3,6 +3,7 @@ import { clamp, TAU } from "./utils.js";
 import { input } from "./input.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
+import { PALETTE } from "./palette.js";
 
 const SPEED = 340;
 const FIRE_COOLDOWN = 0.16;
@@ -18,7 +19,9 @@ export class Player {
     this.cooldown = 0;
     this.shieldTime = 0;
     this.tripleTime = 0;
-    this.invuln = 0; // brevi frame di invulnerabilità dopo un colpo
+    this.invuln = 0;  // brevi frame di invulnerabilità dopo un colpo
+    this.muzzle = 0;  // lampo alla bocca del cannone quando spara
+    this.recoil = 0;  // rinculo visivo
   }
 
   get hasShield() {
@@ -59,6 +62,8 @@ export class Player {
     this.shieldTime = Math.max(0, this.shieldTime - dt);
     this.tripleTime = Math.max(0, this.tripleTime - dt);
     this.invuln = Math.max(0, this.invuln - dt);
+    this.muzzle = Math.max(0, this.muzzle - dt * 6);
+    this.recoil = Math.max(0, this.recoil - dt * 8);
 
     if (input.firing && this.cooldown <= 0) {
       this.shoot(bullets);
@@ -67,7 +72,7 @@ export class Player {
   }
 
   shoot(bullets) {
-    const opt = { color: "#7df9ff", r: 4, friendly: true };
+    const opt = { color: PALETTE.bullet, core: PALETTE.bulletCore, r: 4, friendly: true };
     if (this.tripleTime > 0) {
       bullets.push(new Bullet(this.x, this.y - 16, 0, -620, opt));
       bullets.push(new Bullet(this.x, this.y - 16, -180, -580, opt));
@@ -75,6 +80,8 @@ export class Player {
     } else {
       bullets.push(new Bullet(this.x, this.y - 16, 0, -640, opt));
     }
+    this.muzzle = 1;   // innesca il lampo
+    this.recoil = 5;   // e il rinculo
     sfx.laser();
   }
 
@@ -83,10 +90,39 @@ export class Player {
     if (this.invuln > 0 && Math.floor(this.invuln * 12) % 2 === 0) return;
 
     ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.shadowColor = "#00e5ff";
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = "#00e5ff";
+    ctx.translate(this.x, this.y + this.recoil); // rinculo verso il basso
+
+    // Muzzle flash: bagliore luminoso davanti al muso quando spara.
+    if (this.muzzle > 0) {
+      ctx.globalAlpha = this.muzzle;
+      const mg = ctx.createRadialGradient(0, -22, 0, 0, -22, 22);
+      mg.addColorStop(0, PALETTE.bulletCore);
+      mg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = mg;
+      ctx.beginPath();
+      ctx.arc(0, -22, 22, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Fiamma del motore (dietro, pulsante).
+    ctx.fillStyle = PALETTE.flame;
+    ctx.shadowColor = PALETTE.flame;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(-5, 10);
+    ctx.lineTo(0, 10 + 8 + Math.random() * 10);
+    ctx.lineTo(5, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Scafo: gradiente dal nucleo chiaro al neon, con alone.
+    const g = ctx.createLinearGradient(0, -18, 0, 14);
+    g.addColorStop(0, PALETTE.playerCore);
+    g.addColorStop(1, PALETTE.player);
+    ctx.fillStyle = g;
+    ctx.shadowColor = PALETTE.player;
+    ctx.shadowBlur = 20;
     ctx.beginPath();
     ctx.moveTo(0, -18);
     ctx.lineTo(13, 14);
@@ -94,24 +130,23 @@ export class Player {
     ctx.lineTo(-13, 14);
     ctx.closePath();
     ctx.fill();
-    // Fiamma del motore.
-    ctx.fillStyle = "#ff5bd0";
-    ctx.shadowColor = "#ff5bd0";
+
+    // Cabina: piccolo nucleo luminoso.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = PALETTE.bulletCore;
     ctx.beginPath();
-    ctx.moveTo(-5, 10);
-    ctx.lineTo(0, 10 + 8 + Math.random() * 8);
-    ctx.lineTo(5, 10);
-    ctx.closePath();
+    ctx.arc(0, -2, 3, 0, TAU);
     ctx.fill();
     ctx.restore();
 
     if (this.hasShield) {
-      ctx.strokeStyle = "rgba(120,220,255,0.8)";
-      ctx.shadowColor = "#7df9ff";
-      ctx.shadowBlur = 16;
-      ctx.lineWidth = 2;
+      const pulse = 0.7 + Math.sin(performance.now() / 120) * 0.2;
+      ctx.strokeStyle = `rgba(120,255,190,${pulse})`;
+      ctx.shadowColor = PALETTE.shield;
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.r + 10, 0, TAU);
+      ctx.arc(this.x, this.y, this.r + 12, 0, TAU);
       ctx.stroke();
       ctx.shadowBlur = 0;
     }
