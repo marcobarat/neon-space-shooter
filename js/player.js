@@ -6,6 +6,7 @@ import { input } from "./input.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
+import { randomSuperType } from "./supers.js";
 
 const SPEED = 340;
 const BASE_COOLDOWN = 0.16;
@@ -52,6 +53,10 @@ export class Player {
     this.invuln = 0;   // brevi frame di invulnerabilità dopo un colpo
     this.muzzle = 0;   // lampo alla bocca del cannone quando spara
     this.recoil = 0;   // rinculo visivo
+    // Super-arma: una sola armata alla volta; una nuova sovrascrive.
+    this.superType = null;   // laser | timeslow | drones | nova | missiles
+    this.superReady = false;
+    this.superCharge = 0;    // 0..1, si riempie coi kill
   }
 
   get hasShield() {
@@ -63,6 +68,29 @@ export class Player {
     else if (type === "bomb") this.bombs = Math.min(5, this.bombs + 1);
     else if (type === "shield") this.shieldTime = 6;
     else if (type === "life") this.lives = Math.min(5, this.lives + 1);
+  }
+
+  // Arma una super specifica (da pickup): sovrascrive quella non usata.
+  armSuper(type) {
+    this.superType = type;
+    this.superReady = true;
+  }
+
+  // Carica coi kill; a pieno, se nessuna super è armata, ne arma una casuale.
+  addCharge(amt) {
+    if (this.superReady) return;
+    this.superCharge = Math.min(1, this.superCharge + amt);
+    if (this.superCharge >= 1) {
+      this.superType = randomSuperType();
+      this.superReady = true;
+    }
+  }
+
+  // Consuma la super dopo l'attivazione.
+  consumeSuper() {
+    this.superReady = false;
+    this.superType = null;
+    this.superCharge = 0;
   }
 
   // Esito del colpo subìto, per dare feedback in main.
@@ -149,36 +177,14 @@ export class Player {
     ctx.closePath();
     ctx.fill();
 
-    // Pod laterali che compaiono salendo di livello arma.
-    if (this.weaponLevel >= 1) {
-      ctx.fillStyle = PALETTE.player;
-      ctx.shadowColor = PALETTE.player;
-      ctx.shadowBlur = 12;
-      const spread = 11 + this.weaponLevel;
-      for (const sx of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(sx * spread, 2);
-        ctx.lineTo(sx * (spread + 5), 12);
-        ctx.lineTo(sx * (spread - 2), 12);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
-    // Scafo con gradiente + alone.
-    const g = ctx.createLinearGradient(0, -18, 0, 14);
+    // Scafo che EVOLVE di forma con il livello arma.
+    const g = ctx.createLinearGradient(0, -20, 0, 16);
     g.addColorStop(0, PALETTE.playerCore);
     g.addColorStop(1, PALETTE.player);
     ctx.fillStyle = g;
     ctx.shadowColor = PALETTE.player;
     ctx.shadowBlur = 20;
-    ctx.beginPath();
-    ctx.moveTo(0, -18);
-    ctx.lineTo(13, 14);
-    ctx.lineTo(0, 7);
-    ctx.lineTo(-13, 14);
-    ctx.closePath();
-    ctx.fill();
+    drawHull(ctx, this.weaponLevel);
 
     // Cabina.
     ctx.shadowBlur = 0;
@@ -199,5 +205,35 @@ export class Player {
       ctx.stroke();
       ctx.shadowBlur = 0;
     }
+  }
+}
+
+// Silhouette della navicella per livello arma (centrata sull'origine).
+function drawHull(ctx, lv) {
+  ctx.beginPath();
+  if (lv <= 0) {
+    ctx.moveTo(0, -18); ctx.lineTo(9, 14); ctx.lineTo(0, 8); ctx.lineTo(-9, 14);
+  } else if (lv === 1) {
+    ctx.moveTo(0, -18); ctx.lineTo(6, 4); ctx.lineTo(15, 14); ctx.lineTo(6, 10);
+    ctx.lineTo(0, 6); ctx.lineTo(-6, 10); ctx.lineTo(-15, 14); ctx.lineTo(-6, 4);
+  } else if (lv === 2) {
+    ctx.moveTo(0, -20); ctx.lineTo(8, 6); ctx.lineTo(6, 14); ctx.lineTo(2, 8);
+    ctx.lineTo(0, 16); ctx.lineTo(-2, 8); ctx.lineTo(-6, 14); ctx.lineTo(-8, 6);
+  } else if (lv === 3) {
+    ctx.moveTo(0, -20); ctx.lineTo(5, -6); ctx.lineTo(18, 10); ctx.lineTo(10, 14);
+    ctx.lineTo(4, 8); ctx.lineTo(0, 12); ctx.lineTo(-4, 8); ctx.lineTo(-10, 14);
+    ctx.lineTo(-18, 10); ctx.lineTo(-5, -6);
+  } else {
+    ctx.moveTo(0, -22); ctx.lineTo(6, -8); ctx.lineTo(22, 4); ctx.lineTo(22, 14);
+    ctx.lineTo(12, 12); ctx.lineTo(6, 16); ctx.lineTo(0, 12); ctx.lineTo(-6, 16);
+    ctx.lineTo(-12, 12); ctx.lineTo(-22, 14); ctx.lineTo(-22, 4); ctx.lineTo(-6, -8);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Rampe di razzi a livello massimo.
+  if (lv >= 4) {
+    ctx.fillStyle = PALETTE.flame;
+    ctx.fillRect(-20, 4, 6, 9);
+    ctx.fillRect(14, 4, 6, 9);
   }
 }

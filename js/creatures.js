@@ -4,7 +4,7 @@
 import { TAU } from "./utils.js";
 import { PALETTE } from "./palette.js";
 
-function glowFill(ctx, base, r) {
+export function glowFill(ctx, base, r) {
   const g = ctx.createRadialGradient(0, -r * 0.3, 1, 0, 0, r);
   g.addColorStop(0, "#ffffff");
   g.addColorStop(0.45, base);
@@ -13,7 +13,7 @@ function glowFill(ctx, base, r) {
 }
 
 // Occhio riutilizzabile: sclera bianca, iride colorata, pupilla, riflesso.
-function eye(ctx, x, y, rad, iris, look = 0.35, blink = 1) {
+export function eye(ctx, x, y, rad, iris, look = 0.35, blink = 1) {
   ctx.save();
   ctx.shadowBlur = 0;
   ctx.fillStyle = "#f7fbff";
@@ -212,8 +212,194 @@ export function drawBoss(ctx, b, enraged) {
   // Grande occhio centrale (rosso in furia).
   if (b.hitFlash <= 0) {
     const pulse = enraged ? 1 + Math.sin(b.t * 12) * 0.12 : 1;
-    eye(ctx, 0, 0, 15 * pulse, enraged ? b.color : b.colorEye, 1, 1);
+    eye(ctx, 0, 0, 15 * pulse, enraged ? b.color : PALETTE.bossEye, 1, 1);
   }
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+// ---------- Nuovi mostri ----------
+
+// TANK → asteroide corazzato roccioso con un occhio.
+export function drawTank(ctx, e) {
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.shadowColor = e.color;
+  ctx.shadowBlur = 16;
+  ctx.save();
+  ctx.rotate(e.t * 0.4);
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, e.r);
+  ctx.beginPath();
+  const sides = 9;
+  for (let i = 0; i <= sides; i++) {
+    const a = (i / sides) * TAU;
+    const rr = e.r * (0.82 + Math.sin(i * 2.3) * 0.16);
+    const px = Math.cos(a) * rr;
+    const py = Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(10,4,16,0.4)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-e.r * 0.5, -e.r * 0.2);
+  ctx.lineTo(0, e.r * 0.1);
+  ctx.lineTo(e.r * 0.4, -e.r * 0.3);
+  ctx.stroke();
+  ctx.restore();
+  if (e.hitFlash <= 0) eye(ctx, 0, 2, 6, e.color, 1, 1);
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+// KAMIKAZE → cometa/dardo aggressivo con coda infuocata, punta in basso.
+export function drawKamikaze(ctx, e) {
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.shadowColor = e.color;
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = "rgba(255,120,60,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(-6, -6);
+  ctx.lineTo(0, -18 - Math.random() * 8);
+  ctx.lineTo(6, -6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, e.r);
+  ctx.beginPath();
+  ctx.moveTo(0, 16);
+  ctx.lineTo(11, -8);
+  ctx.lineTo(4, -4);
+  ctx.lineTo(0, -10);
+  ctx.lineTo(-4, -4);
+  ctx.lineTo(-11, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(-3, -2, 2, 0, TAU);
+  ctx.arc(3, -2, 2, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = "#0a0410";
+  ctx.beginPath();
+  ctx.arc(-3, -1, 1, 0, TAU);
+  ctx.arc(3, -1, 1, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+// SPLITTER → blob gelatinoso con una linea di divisione (scala con e.r).
+export function drawSplitter(ctx, e) {
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
+  const rr = e.r;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.shadowColor = e.color;
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, rr);
+  ctx.beginPath();
+  const n = 12;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * TAU;
+    const wob = 1 + Math.sin(a * 3 + e.t * 4) * 0.12;
+    const px = Math.cos(a) * rr * wob;
+    const py = Math.sin(a) * rr * wob;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(10,4,16,0.35)";
+  ctx.lineWidth = Math.max(1, rr * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(0, -rr * 0.9);
+  ctx.lineTo(0, rr * 0.9);
+  ctx.stroke();
+  if (e.hitFlash <= 0 && rr > 10) {
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#0a0410";
+    ctx.beginPath();
+    ctx.arc(-rr * 0.3, -rr * 0.1, rr * 0.13, 0, TAU);
+    ctx.arc(rr * 0.3, -rr * 0.1, rr * 0.13, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+// SNIPER → torretta esagonale con occhio e mirino telegrafato.
+export function drawSniper(ctx, e) {
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
+  if (e.aiming > 0) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,60,90,${0.25 + 0.5 * Math.abs(Math.sin(e.aiming * 30))})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    ctx.lineTo(e.x + Math.cos(e.aimDir) * 800, e.y + Math.sin(e.aimDir) * 800);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.shadowColor = e.color;
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, e.r);
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU + Math.PI / 6;
+    const px = Math.cos(a) * e.r;
+    const py = Math.sin(a) * e.r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  const dir = e.aiming > 0 ? e.aimDir : Math.PI / 2;
+  ctx.strokeStyle = base;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(Math.cos(dir) * e.r * 1.2, Math.sin(dir) * e.r * 1.2);
+  ctx.stroke();
+  if (e.hitFlash <= 0) eye(ctx, 0, 0, 6, e.color, 1, 1);
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+// MINE → mina spinata con nucleo lampeggiante.
+export function drawMine(ctx, e) {
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.shadowColor = e.color;
+  ctx.shadowBlur = 16;
+  ctx.strokeStyle = base;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU + e.t * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * e.r * 0.7, Math.sin(a) * e.r * 0.7);
+    ctx.lineTo(Math.cos(a) * (e.r + 5), Math.sin(a) * (e.r + 5));
+    ctx.stroke();
+  }
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, e.r * 0.7);
+  ctx.beginPath();
+  ctx.arc(0, 0, e.r * 0.7, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  const blink = 0.4 + 0.6 * Math.abs(Math.sin(e.t * 8));
+  ctx.fillStyle = `rgba(255,60,90,${blink})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, TAU);
+  ctx.fill();
   ctx.restore();
   ctx.shadowBlur = 0;
 }

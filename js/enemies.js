@@ -1,83 +1,146 @@
-// Nemici: tre tipi (dritto, zigzag, sparatore) con due VARIANTI di pattern
-// ciascuno, più un boss a due fasi. Estetica neon con gradienti e glow a strati.
+// Nemici: tipi base (dritto, zigzag, sparatore) con varianti + nuovi tipi con
+// comportamenti veri (tank, kamikaze, splitter, sniper, mine). L'arte è in creatures.js.
 import { rand, TAU } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
-import { drawStraight, drawZigzag, drawShooter, drawBoss } from "./creatures.js";
+import {
+  drawStraight, drawZigzag, drawShooter,
+  drawTank, drawKamikaze, drawSplitter, drawSniper, drawMine,
+} from "./creatures.js";
+
+// Statistiche per tipo.
+const STATS = {
+  straight: { hp: 1, r: 15, speed: 110, score: 100 },
+  zigzag: { hp: 1, r: 15, speed: 90, score: 150 },
+  shooter: { hp: 2, r: 15, speed: 110, score: 200 },
+  tank: { hp: 7, r: 22, speed: 52, score: 350 },
+  kamikaze: { hp: 1, r: 14, speed: 90, score: 180 },
+  splitter: { hp: 2, r: 16, speed: 95, score: 160 },
+  splitling: { hp: 1, r: 9, speed: 150, score: 60 },
+  sniper: { hp: 2, r: 15, speed: 70, score: 250 },
+  mine: { hp: 1, r: 13, speed: 40, score: 200 },
+};
 
 export class Enemy {
   constructor(type, x, w, variant = 0, color = null, fireMul = 1) {
+    const st = STATS[type] || STATS.straight;
     this.type = type;
     this.variant = variant;
     this.x = x;
     this.y = -30;
     this.w = w;
-    this.r = 15;
-    this.hp = type === "shooter" ? 2 : 1;
+    this.r = st.r;
+    this.hp = st.hp;
+    this.speed = st.speed;
+    this.score = st.score;
     this.dead = false;
     this.hitFlash = 0;
     this.t = rand(0, TAU);
     this.baseX = x;
     this.fireTimer = rand(1, 2.5);
-    this.speed = type === "zigzag" ? 90 : 110;
-    this.score = { straight: 100, zigzag: 150, shooter: 200 }[type];
-    // Colore dal tema del mondo (fallback alla palette base).
-    this.color = color || { straight: PALETTE.straight, zigzag: PALETTE.zigzag, shooter: PALETTE.shooter }[type];
-    this.fireMul = fireMul; // scala la cadenza di fuoco con la difficoltà
+    this.aiming = 0;   // sniper: fase di mira (telegrafo)
+    this.aimDir = 0;
+    this.color = color || PALETTE.straight;
+    this.fireMul = fireMul;
   }
 
-  update(dt, enemyBullets, targetX) {
+  update(dt, enemyBullets, px, py) {
     this.t += dt;
 
-    // Movimento orizzontale in base a tipo/variante.
-    if (this.type === "zigzag") {
-      if (this.variant === 1) this.speed += 45 * dt; // variante: accelera scendendo
-      const amp = this.variant === 1 ? 60 : 90;
-      const freq = this.variant === 1 ? 3.4 : 2.5;
-      this.x = this.baseX + Math.sin(this.t * freq) * amp;
-    } else if (this.type === "straight" && this.variant === 1) {
-      // variante: deriva lentamente di lato invece che dritto.
-      this.x = this.baseX + Math.sin(this.t * 1.5) * 45;
-    }
-
-    this.y += this.speed * dt;
-
-    if (this.type === "shooter") {
-      this.fireTimer -= dt;
-      if (this.fireTimer <= 0 && this.y > 0 && this.y < this.w) {
-        if (this.variant === 1) {
-          // variante: raffica a ventaglio di 3 colpi.
-          this.fireTimer = rand(2.2, 3.2) / this.fireMul;
-          for (let k = -1; k <= 1; k++) {
-            enemyBullets.push(
-              new Bullet(this.x, this.y + 12, k * 130, 240, {
-                color: PALETTE.enemyBullet,
-                r: 5,
-                friendly: false,
-              })
-            );
+    switch (this.type) {
+      case "zigzag": {
+        if (this.variant === 1) this.speed += 45 * dt;
+        const amp = this.variant === 1 ? 60 : 90;
+        const freq = this.variant === 1 ? 3.4 : 2.5;
+        this.x = this.baseX + Math.sin(this.t * freq) * amp;
+        this.y += this.speed * dt;
+        break;
+      }
+      case "straight": {
+        if (this.variant === 1) this.x = this.baseX + Math.sin(this.t * 1.5) * 45;
+        this.y += this.speed * dt;
+        break;
+      }
+      case "shooter": {
+        this.y += this.speed * dt;
+        this.fireTimer -= dt;
+        if (this.fireTimer <= 0 && this.y > 0 && this.y < this.w) {
+          if (this.variant === 1) {
+            this.fireTimer = rand(2.2, 3.2) / this.fireMul;
+            for (let k = -1; k <= 1; k++) {
+              enemyBullets.push(new Bullet(this.x, this.y + 12, k * 130, 240, { color: PALETTE.enemyBullet, r: 5, friendly: false }));
+            }
+          } else {
+            this.fireTimer = rand(1.5, 3) / this.fireMul;
+            const dx = px - this.x, dy = 300;
+            const m = Math.hypot(dx, dy) || 1;
+            enemyBullets.push(new Bullet(this.x, this.y + 12, (dx / m) * 260, (dy / m) * 260, { color: this.color, r: 5, friendly: false }));
+          }
+          sfx.enemyLaser();
+        }
+        break;
+      }
+      case "tank": {
+        this.x = this.baseX + Math.sin(this.t * 0.8) * 24;
+        this.y += this.speed * dt;
+        break;
+      }
+      case "kamikaze": {
+        // Si tuffa verso il player accelerando.
+        const dx = px - this.x;
+        this.x += Math.sign(dx) * Math.min(Math.abs(dx), 190 * dt);
+        this.speed = Math.min(340, this.speed + 150 * dt);
+        this.y += this.speed * dt;
+        break;
+      }
+      case "sniper": {
+        if (this.y < 110) {
+          this.y += this.speed * dt;
+        } else if (this.aiming > 0) {
+          this.aiming -= dt;
+          if (this.aiming <= 0) {
+            enemyBullets.push(new Bullet(this.x, this.y + 8, Math.cos(this.aimDir) * 440, Math.sin(this.aimDir) * 440, { color: this.color, r: 4, friendly: false }));
+            this.fireTimer = rand(1.6, 2.6) / this.fireMul;
+            sfx.enemyLaser();
           }
         } else {
-          // base: singolo colpo mirato al player.
-          this.fireTimer = rand(1.5, 3) / this.fireMul;
-          const dx = targetX - this.x;
-          const dy = 300;
-          const m = Math.hypot(dx, dy) || 1;
-          enemyBullets.push(
-            new Bullet(this.x, this.y + 12, (dx / m) * 260, (dy / m) * 260, {
-              color: PALETTE.shooter,
-              r: 5,
-              friendly: false,
-            })
-          );
+          this.fireTimer -= dt;
+          if (this.fireTimer <= 0) {
+            this.aiming = 0.5;
+            this.aimDir = Math.atan2(py - this.y, px - this.x);
+          }
         }
-        sfx.enemyLaser();
+        break;
       }
+      case "splitter":
+      case "splitling": {
+        this.x = this.baseX + Math.sin(this.t * 2) * 30;
+        this.y += this.speed * dt;
+        break;
+      }
+      case "mine": {
+        this.x = this.baseX + Math.sin(this.t * 1.2) * 40;
+        this.y += this.speed * dt;
+        const dx = px - this.x, dy = py - this.y;
+        if (dx * dx + dy * dy < 72 * 72) {
+          const n = 10;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU;
+            enemyBullets.push(new Bullet(this.x, this.y, Math.cos(a) * 190, Math.sin(a) * 190, { color: this.color, r: 5, friendly: false }));
+          }
+          this.dead = true;
+          this.exploded = true;
+          sfx.enemyLaser();
+        }
+        break;
+      }
+      default:
+        this.y += this.speed * dt;
     }
 
     this.hitFlash = Math.max(0, this.hitFlash - dt);
-    if (this.y > 660) this.dead = true; // uscito dallo schermo
+    if (this.y > 660) this.dead = true;
   }
 
   hit(dmg = 1) {
@@ -88,115 +151,17 @@ export class Enemy {
   }
 
   draw(ctx) {
-    // Delega il disegno alla "creatura" corrispondente al tipo.
-    if (this.type === "straight") drawStraight(ctx, this);
-    else if (this.type === "zigzag") drawZigzag(ctx, this);
-    else drawShooter(ctx, this);
-  }
-}
-
-export class Boss {
-  constructor(w, level, color = PALETTE.boss, fireMul = 1) {
-    this.w = w;
-    this.x = w / 2;
-    this.y = -60;
-    this.r = 46;
-    this.maxHp = 32 + level * 9; // ridotto: più abbordabile
-    this.hp = this.maxHp;
-    this.dead = false;
-    this.hitFlash = 0;
-    this.t = 0;
-    this.fireTimer = 1.5;
-    this.spiralAngle = 0;
-    this.entering = true;
-    this.score = 2000 + level * 500;
-    this.isBoss = true;
-    this.color = color;     // colore del mondo
-    this.fireMul = fireMul; // cadenza scalata dalla difficoltà
-  }
-
-  get enraged() {
-    return this.hp <= this.maxHp * 0.33; // 2ª fase solo sotto il 33% di vita
-  }
-
-  update(dt, enemyBullets, targetX) {
-    this.t += dt;
-    if (this.entering) {
-      this.y += 60 * dt;
-      if (this.y >= 90) this.entering = false;
-      return;
+    switch (this.type) {
+      case "straight": return drawStraight(ctx, this);
+      case "zigzag": return drawZigzag(ctx, this);
+      case "shooter": return drawShooter(ctx, this);
+      case "tank": return drawTank(ctx, this);
+      case "kamikaze": return drawKamikaze(ctx, this);
+      case "splitter":
+      case "splitling": return drawSplitter(ctx, this);
+      case "sniper": return drawSniper(ctx, this);
+      case "mine": return drawMine(ctx, this);
+      default: return drawStraight(ctx, this);
     }
-    // Fase 2: si muove un po' più veloce (ma non frenetico).
-    const spd = this.enraged ? 1.05 : 0.8;
-    this.x = this.w / 2 + Math.sin(this.t * spd) * (this.w / 2 - 80);
-    this.hitFlash = Math.max(0, this.hitFlash - dt);
-
-    this.fireTimer -= dt;
-    if (this.fireTimer <= 0) {
-      if (this.enraged) {
-        // Fase 2: spirale rotante, ma RADA e lenta -> schivabile.
-        this.fireTimer = 0.32 / this.fireMul;
-        this.spiralAngle += 0.55;
-        for (let k = 0; k < 2; k++) {
-          const ang = this.spiralAngle + k * Math.PI;
-          enemyBullets.push(
-            new Bullet(this.x, this.y, Math.cos(ang) * 150, Math.abs(Math.sin(ang)) * 90 + 120, {
-              color: this.color,
-              r: 6,
-              friendly: false,
-            })
-          );
-        }
-      } else {
-        // Fase 1: ventaglio più stretto e lento + colpo mirato.
-        this.fireTimer = 1.5 / this.fireMul;
-        const n = 5;
-        for (let i = 0; i < n; i++) {
-          const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.26;
-          enemyBullets.push(
-            new Bullet(this.x, this.y + 30, Math.cos(ang) * 190, Math.sin(ang) * 190, {
-              color: this.color,
-              r: 6,
-              friendly: false,
-            })
-          );
-        }
-        const dx = targetX - this.x;
-        const dy = 320;
-        const m = Math.hypot(dx, dy) || 1;
-        enemyBullets.push(
-          new Bullet(this.x, this.y + 30, (dx / m) * 240, (dy / m) * 240, {
-            color: PALETTE.combo,
-            r: 6,
-            friendly: false,
-          })
-        );
-        sfx.enemyLaser();
-      }
-    }
-  }
-
-  hit(dmg = 1) {
-    this.hp -= dmg;
-    this.hitFlash = 0.08;
-    if (this.hp <= 0) this.dead = true;
-    return this.hp <= 0;
-  }
-
-  draw(ctx) {
-    const enraged = this.enraged;
-    // Corpo del kraken/cervello disegnato dal modulo creature.
-    drawBoss(ctx, this, enraged);
-
-    // Barra vita in alto.
-    const bw = 400;
-    const bx = this.w / 2 - bw / 2;
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
-    ctx.fillRect(bx, 16, bw, 10);
-    ctx.fillStyle = enraged ? PALETTE.combo : PALETTE.boss;
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = 12;
-    ctx.fillRect(bx, 16, bw * Math.max(0, this.hp / this.maxHp), 10);
-    ctx.shadowBlur = 0;
   }
 }

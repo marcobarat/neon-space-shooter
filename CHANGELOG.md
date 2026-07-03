@@ -3,6 +3,35 @@
 Tutte le modifiche rilevanti del progetto sono documentate qui.
 Il formato segue una versione semplificata di [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.3.0] — 2026-07-03 — Update "Epico"
+
+### Nuovi mostri (`js/enemies.js`, `js/creatures.js`)
+- **tank** (asteroide corazzato), **kamikaze** (si tuffa sul player), **splitter**
+  (si divide alla morte in 2 splitling), **sniper** (mirino telegrafato + colpo veloce),
+  **mine** (esplode in un anello di proiettili). Pool di nemici per mondo in `worlds.js`.
+
+### Boss unici per mondo (`js/bosses.js`)
+- 5 archetipi diversi, uno per mondo: **Kraken** (spirale), **Serpente** (segmenti),
+  **Fortezza** (cannoni che si distruggono), **Regina Alveare** (genera sciami),
+  **Nucleo Laser** (spazza un fascio). Factory `createBoss`.
+
+### Super-armi / ultimate (`js/supers.js`)
+- 5 super con **icona unica**: laser, rallenta-tempo, droni orbitali, nova, missili.
+- **Slot singolo**: si carica coi kill **e** cade come pickup raro; una nuova
+  **sovrascrive** quella non usata. Attivazione col tasto **E**.
+
+### Sfondo galassia vivo (`js/scene.js`)
+- Scena animata diversa per mondo: galassia a spirale, campo di asteroidi, aurore,
+  braci, vuoto con galassie lontane — con parallasse e movimento.
+
+### Arte, schermate, mobile
+- **Navicella che cambia forma a ogni livello arma** (L0→L4).
+- Menu e **Game Over ridisegnati** (game-over con lockout anti-restart + statistiche run).
+- **Pausa** (tasto P/Esc + pulsante ⏸).
+- **Layout verticale (portrait) responsive** + **controlli touch** (trascina per muoverti,
+  auto-fire, pulsanti a schermo Bomba/Super/Pausa) — giocabile su telefono.
+- **Difficoltà anticipata**, combo fino a x5, agente `mobile-tester`, nuovi test.
+
 ## [0.2.0] — 2026-07-03
 
 ### Armi, razzi e bombe (contro la noia delle armi a timer)
