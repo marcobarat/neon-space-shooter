@@ -1,7 +1,7 @@
 // Boss: una base comune + 5 archetipi, uno per mondo. La factory createBoss()
 // istanzia l'archetipo giusto. L'attacco riceve (dt, enemyBullets, px, py, api),
 // dove api.spawnMinion(x) permette alla Regina di generare sciami.
-import { TAU, rand } from "./utils.js";
+import { TAU, rand, punchScale } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
@@ -68,7 +68,18 @@ class BossBase {
     ctx.fillText(this.name, this.w / 2, 30);
   }
   draw(ctx) {
-    this.drawBody(ctx);
+    // Scale-punch sul colpo: il boss "reagisce" fisicamente ai danni.
+    if (this.hitFlash > 0) {
+      const s = punchScale(this.hitFlash, 2);
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.scale(s, s);
+      ctx.translate(-this.x, -this.y);
+      this.drawBody(ctx);
+      ctx.restore();
+    } else {
+      this.drawBody(ctx);
+    }
     this.drawHealth(ctx);
   }
 }
@@ -333,9 +344,14 @@ class LaserBoss extends BossBase {
   }
   drawBody(ctx) {
     if (this.phase === "charge") {
+      // Telegrafo che "cresce" col progredire della carica: linea più spessa e
+      // luminosa quando manca poco allo sweep, così è chiaro da dove arriva.
+      const charge = 1 - Math.max(0, this.timer) / 1.1; // 0 → 1
       ctx.save();
-      ctx.strokeStyle = `rgba(255,60,90,${0.3 + 0.5 * Math.abs(Math.sin(this.t * 20))})`;
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(255,60,90,${0.25 + 0.55 * charge * (0.6 + 0.4 * Math.abs(Math.sin(this.t * 20)))})`;
+      ctx.shadowColor = "rgba(255,60,90,0.9)";
+      ctx.shadowBlur = 10 * charge;
+      ctx.lineWidth = 2 + 4 * charge;
       ctx.beginPath();
       ctx.moveTo(this.x, this.y);
       ctx.lineTo(this.x + Math.cos(this.angle) * 900, this.y + Math.sin(this.angle) * 900);

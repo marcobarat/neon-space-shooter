@@ -77,13 +77,16 @@ export class Player {
   }
 
   // Carica coi kill; a pieno, se nessuna super è armata, ne arma una casuale.
+  // Ritorna true SOLO nel frame in cui la super diventa pronta (per il feedback).
   addCharge(amt) {
-    if (this.superReady) return;
+    if (this.superReady) return false;
     this.superCharge = Math.min(1, this.superCharge + amt);
     if (this.superCharge >= 1) {
       this.superType = randomSuperType();
       this.superReady = true;
+      return true;
     }
+    return false;
   }
 
   // Consuma la super dopo l'attivazione.

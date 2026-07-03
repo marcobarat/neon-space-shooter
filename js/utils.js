@@ -22,3 +22,10 @@ export function comboMultiplier(combo) {
   if (combo >= 5) return 1.5;
   return 1;
 }
+
+// Scale-punch: dato un valore di "flash" residuo (>=0) che decade verso 0,
+// ritorna il fattore di scala (1 = riposo, >1 = colpito). Puro/testabile:
+// usato per far "sobbalzare" nemici e boss quando vengono colpiti.
+export function punchScale(flash, amount = 3.2) {
+  return 1 + Math.max(0, flash) * amount;
+}

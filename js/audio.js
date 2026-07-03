@@ -65,4 +65,14 @@ export const sfx = {
     tone({ freq: 700, slideTo: 1200, type: "sine", dur: 0.2, vol: 0.2 });
   },
   boss: () => tone({ freq: 120, slideTo: 40, type: "sawtooth", dur: 0.6, vol: 0.4 }),
+  // Salita di combo: due note ascendenti brillanti (premio di skill).
+  combo: () => {
+    tone({ freq: 660, slideTo: 990, type: "triangle", dur: 0.12, vol: 0.25 });
+    tone({ freq: 990, slideTo: 1480, type: "sine", dur: 0.16, vol: 0.18 });
+  },
+  // Super carica: chime cristallino che segnala "PRONTA".
+  ready: () => {
+    tone({ freq: 800, slideTo: 1600, type: "sine", dur: 0.22, vol: 0.3 });
+    tone({ freq: 1200, slideTo: 2000, type: "sine", dur: 0.28, vol: 0.16 });
+  },
 };

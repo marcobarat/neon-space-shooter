@@ -6,6 +6,7 @@ import { Enemy } from "../js/enemies.js";
 import { createBoss } from "../js/bosses.js";
 import { SUPER_TYPES, SUPER_INFO, TIMESLOW_FACTOR } from "../js/supers.js";
 import { WORLDS } from "../js/worlds.js";
+import { punchScale } from "../js/utils.js";
 
 test("super: la carica coi kill arma una super a pieno", () => {
   const p = new Player(540, 960);
@@ -57,6 +58,20 @@ test("nemici: statistiche per tipo (tank robusto, splitling piccolo)", () => {
   const spl = new Enemy("splitling", 100, 540);
   assert.equal(spl.r, 9);
   assert.equal(spl.hp, 1);
+});
+
+test("punchScale: 1 a riposo, >1 se colpito, mai <1", () => {
+  assert.equal(punchScale(0), 1);
+  assert.ok(punchScale(0.1) > 1);
+  assert.ok(punchScale(0.1) > punchScale(0.05)); // più flash = più sobbalzo
+  assert.equal(punchScale(-5), 1); // valori negativi non "schiacciano"
+});
+
+test("addCharge: ritorna true SOLO nel frame in cui la super diventa pronta", () => {
+  const p = new Player(540, 960);
+  assert.equal(p.addCharge(0.5), false); // ancora sotto 1
+  assert.equal(p.addCharge(0.6), true);  // supera 1 → appena pronta
+  assert.equal(p.addCharge(0.6), false); // già pronta: nessuna transizione
 });
 
 test("supers: 5 tipi definiti e fattore timeslow valido", () => {

@@ -312,6 +312,7 @@ function novaBlast() {
   for (const e of game.enemies) { if (!e.dead) { killEnemy(e); e.dead = true; } }
   if (game.boss && !game.boss.dead && game.boss.hit(5)) killEnemy(game.boss);
   game.particles.burst(W / 2, H / 2, PALETTE.combo, 42);
+  game.particles.shockwave(W / 2, H / 2, "#ffffff", Math.max(W, H), 0.5);
   game.particles.addShake(20);
   game.flash = 0.4;
   sfx.explosion();
@@ -324,11 +325,35 @@ function killEnemy(e) {
   game.particles.burst(e.x, e.y, col, e.isBoss ? 70 : 22);
   game.particles.addShake(e.isBoss ? 22 : 7);
   game.hitStop = Math.max(game.hitStop, e.isBoss ? 0.11 : 0.045);
+  // Onda d'urto: grande e doppia sui boss, minima sui nemici comuni.
+  if (e.isBoss) {
+    game.particles.shockwave(e.x, e.y, "#ffffff", 230, 0.55);
+    game.particles.shockwave(e.x, e.y, col, 150, 0.42);
+  } else {
+    game.particles.shockwave(e.x, e.y, col, 30 + e.r, 0.26);
+  }
   sfx.explosion();
+  // Salita di combo: quando il moltiplicatore cresce, premia con pop/suono/shake.
+  const prevMult = comboMultiplier(game.combo);
   game.combo += 1;
   game.bestCombo = Math.max(game.bestCombo, game.combo);
   game.comboTimer = 2.2;
-  game.player.addCharge(e.isBoss ? 0.5 : 0.06);
+  const newMult = comboMultiplier(game.combo);
+  if (newMult > prevMult) {
+    addPopup(game.player.x, game.player.y - 42, `COMBO x${newMult}!`, PALETTE.combo);
+    game.particles.addShake(6);
+    game.hitStop = Math.max(game.hitStop, 0.05);
+    sfx.combo();
+  }
+  // Feedback quando la super si carica del tutto.
+  const becameReady = game.player.addCharge(e.isBoss ? 0.5 : 0.06);
+  if (becameReady) {
+    const sc = SUPER_INFO[game.player.superType].color;
+    addPopup(game.player.x, game.player.y - 58, "SUPER PRONTA!", sc);
+    game.particles.shockwave(game.player.x, game.player.y, sc, 60, 0.45);
+    game.particles.addShake(5);
+    sfx.ready();
+  }
   addScore(e.score, e.x, e.y);
   const chance = e.isBoss ? 1 : 0.13;
   if (Math.random() < chance) game.powerups.push(new PowerUp(e.x, e.y, PowerUp.randomType()));
@@ -365,6 +390,7 @@ function detonateBomb() {
   if (game.boss && !game.boss.dead && game.boss.hit(8)) killEnemy(game.boss);
   game.particles.burst(p.x, p.y, "#ffffff", 40);
   game.particles.burst(W / 2, H / 2, PALETTE.combo, 46);
+  game.particles.shockwave(p.x, p.y, "#ffffff", Math.max(W, H) * 0.9, 0.5);
   game.particles.addShake(26);
   game.flash = 0.5;
   p.invuln = Math.max(p.invuln, 1.0);
@@ -420,9 +446,15 @@ function handleCollisions() {
         p.armSuper(pu.superType);
         addPopup(pu.x, pu.y - 20, `SUPER: ${SUPER_INFO[pu.superType].name}`, pu.color);
       } else {
+        const beforeLv = p.weaponLevel;
         p.addPowerup(pu.type);
         const label = { power: "ARMA +1", bomb: "BOMBA +1", shield: "SCUDO", life: "VITA +1" }[pu.type];
         addPopup(pu.x, pu.y - 20, label, PALETTE.ui);
+        // Upgrade arma effettivo: anello + shake per marcarlo (non a livello max).
+        if (pu.type === "power" && p.weaponLevel > beforeLv) {
+          game.particles.shockwave(p.x, p.y, PALETTE.bullet, 66, 0.4);
+          game.particles.addShake(5);
+        }
       }
       game.particles.burst(pu.x, pu.y, pu.color, 14);
       sfx.powerup();
@@ -478,11 +510,18 @@ function drawPopups() {
   ctx.textBaseline = "middle";
   ctx.font = `bold 16px ${FONT_MONO}`;
   for (const p of game.popups) {
+    // Pop-in: parte ingrandito e si assesta nei primi ~120ms.
+    const age = 0.9 - p.life;
+    const pop = age < 0.12 ? 1 + ((0.12 - age) / 0.12) * 0.6 : 1;
     ctx.globalAlpha = Math.min(1, p.life / 0.6);
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
     ctx.shadowBlur = 8;
-    ctx.fillText(p.text, p.x, p.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(pop, pop);
+    ctx.fillText(p.text, 0, 0);
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;

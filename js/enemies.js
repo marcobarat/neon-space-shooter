@@ -1,6 +1,6 @@
 // Nemici: tipi base (dritto, zigzag, sparatore) con varianti + nuovi tipi con
 // comportamenti veri (tank, kamikaze, splitter, sniper, mine). L'arte è in creatures.js.
-import { rand, TAU } from "./utils.js";
+import { rand, punchScale, TAU } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
@@ -36,6 +36,7 @@ export class Enemy {
     this.score = st.score;
     this.dead = false;
     this.hitFlash = 0;
+    this.knock = 0;   // contraccolpo VISIVO (non tocca la hitbox) quando colpito
     this.t = rand(0, TAU);
     this.baseX = x;
     this.fireTimer = rand(1, 2.5);
@@ -140,17 +141,34 @@ export class Enemy {
     }
 
     this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.knock = Math.max(0, this.knock - dt * 34);
     if (this.y > 660) this.dead = true;
   }
 
   hit(dmg = 1) {
     this.hp -= dmg;
     this.hitFlash = 0.1;
+    this.knock = Math.min(6, this.knock + 4); // sobbalzo verso l'alto
     if (this.hp <= 0) this.dead = true;
     return this.hp <= 0;
   }
 
   draw(ctx) {
+    // Scale-punch + contraccolpo visivo attorno al centro del nemico.
+    if (this.hitFlash > 0 || this.knock > 0) {
+      const s = punchScale(this.hitFlash);
+      ctx.save();
+      ctx.translate(this.x, this.y - this.knock);
+      ctx.scale(s, s);
+      ctx.translate(-this.x, -this.y);
+      this._drawShape(ctx);
+      ctx.restore();
+      return;
+    }
+    this._drawShape(ctx);
+  }
+
+  _drawShape(ctx) {
     switch (this.type) {
       case "straight": return drawStraight(ctx, this);
       case "zigzag": return drawZigzag(ctx, this);

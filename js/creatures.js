@@ -337,14 +337,25 @@ export function drawSplitter(ctx, e) {
 export function drawSniper(ctx, e) {
   const base = e.hitFlash > 0 ? "#ffffff" : e.color;
   if (e.aiming > 0) {
+    // Telegrafo più leggibile: raggio pulsante che si "carica" (si assottiglia
+    // e si accende avvicinandosi allo sparo) + nucleo di carica al muso.
+    const charge = 1 - Math.max(0, e.aiming) / 0.5; // 0 → 1 mentre mira
+    const pulse = 0.3 + 0.5 * Math.abs(Math.sin(e.aiming * 30));
     ctx.save();
-    ctx.strokeStyle = `rgba(255,60,90,${0.25 + 0.5 * Math.abs(Math.sin(e.aiming * 30))})`;
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(255,70,100,${(0.2 + 0.5 * charge) * pulse + 0.15})`;
+    ctx.shadowColor = "rgba(255,60,90,0.9)";
+    ctx.shadowBlur = 8 * charge;
+    ctx.lineWidth = 1.5 + 2 * charge;
     ctx.beginPath();
     ctx.moveTo(e.x, e.y);
     ctx.lineTo(e.x + Math.cos(e.aimDir) * 800, e.y + Math.sin(e.aimDir) * 800);
     ctx.stroke();
+    ctx.fillStyle = `rgba(255,220,120,${0.4 + 0.6 * charge})`;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 2 + 3 * charge, 0, TAU);
+    ctx.fill();
     ctx.restore();
+    ctx.shadowBlur = 0;
   }
   ctx.save();
   ctx.translate(e.x, e.y);
