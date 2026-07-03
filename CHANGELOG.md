@@ -3,7 +3,33 @@
 Tutte le modifiche rilevanti del progetto sono documentate qui.
 Il formato segue una versione semplificata di [Keep a Changelog](https://keepachangelog.com/it/).
 
-## [Non rilasciato]
+## [0.2.0] — 2026-07-03
+
+### Armi, razzi e bombe (contro la noia delle armi a timer)
+- **Armi a livelli persistenti** (`js/player.js`): raccogli **Power** e sali
+  (singolo → doppio → triplo → spread a 5 vie → **razzi a ricerca**). Niente timer:
+  le armi restano finché non vieni colpito, e allora **scendi di un livello** (perdi
+  una vita solo a livello 0). `shotPattern()` è puro e testato.
+- **Razzi a ricerca** (`js/rockets.js`): al livello arma massimo la navicella lancia
+  missili homing che curvano verso il nemico più vicino ed esplodono ad area.
+- **Bombe a scorta**: le accumuli (HUD), le detoni col tasto **B/Shift** → ripuliscono
+  lo schermo dai proiettili e infliggono danno a tutti (`js/main.js`, `js/input.js`).
+
+### Mondi a tema (contro "sempre uguale")
+- Nuovo `js/worlds.js`: 5 mondi che ciclano — Nebulosa Viola, Cintura d'Asteroidi,
+  Ghiaccio Cosmico, Inferno Stellare, Vuoto Profondo. Dopo ogni boss si **cambia
+  mondo**: sfondo, colori di mostri e boss cambiano (banner "MONDO X").
+- `js/creatures.js` e `js/enemies.js` usano il colore del mondo per ogni creatura.
+
+### Difficoltà e power-up
+- **Difficoltà in salita**: velocità e cadenza di fuoco crescono con ondate/livelli.
+- **Combo estesa a x5** (`comboMultiplier` in `js/utils.js`, testata).
+- Power-up ridisegnati con icone distinte: Power, Bomba, Scudo, Vita (drop pesati).
+- HUD: livello arma (pips), contatore bombe, mondo corrente. Hook `?level=N` per
+  l'anteprima di ogni mondo.
+- Nuovi test in `tests/gameplay.test.js` (armi, combo, mondi, targeting razzi).
+
+## [0.1.0] — creature e prima grafica neon (storico)
 
 ### Creature spaziali + bilanciamento boss
 - I nemici non sono più forme geometriche ma vere **creature spaziali** animate

@@ -37,10 +37,10 @@ function eye(ctx, x, y, rad, iris, look = 0.35, blink = 1) {
 
 // STRAIGHT → medusa aliena: cupola a campana + tentacoli ondeggianti.
 export function drawStraight(ctx, e) {
-  const base = e.hitFlash > 0 ? "#ffffff" : PALETTE.straight;
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
   ctx.save();
   ctx.translate(e.x, e.y);
-  ctx.shadowColor = PALETTE.straight;
+  ctx.shadowColor = e.color;
   ctx.shadowBlur = 18;
 
   // Tentacoli.
@@ -81,11 +81,11 @@ export function drawStraight(ctx, e) {
 
 // ZIGZAG → falena/pipistrello spaziale: corpo + ali che sbattono.
 export function drawZigzag(ctx, e) {
-  const base = e.hitFlash > 0 ? "#ffffff" : PALETTE.zigzag;
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
   const flap = Math.sin(e.t * 12) * 0.5 + 0.5; // 0..1
   ctx.save();
   ctx.translate(e.x, e.y);
-  ctx.shadowColor = PALETTE.zigzag;
+  ctx.shadowColor = e.color;
   ctx.shadowBlur = 16;
   ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, 16);
 
@@ -124,13 +124,13 @@ export function drawZigzag(ctx, e) {
 
 // SHOOTER → occhio fluttuante alieno con tentacoli; sbatte le palpebre.
 export function drawShooter(ctx, e) {
-  const base = e.hitFlash > 0 ? "#ffffff" : PALETTE.shooter;
+  const base = e.hitFlash > 0 ? "#ffffff" : e.color;
   // Blink ogni ~3s.
   const cycle = (e.t % 3);
   const blink = cycle > 2.85 ? Math.abs(Math.sin((cycle - 2.85) / 0.15 * Math.PI)) * 0.9 + 0.1 : 1;
   ctx.save();
   ctx.translate(e.x, e.y);
-  ctx.shadowColor = PALETTE.shooter;
+  ctx.shadowColor = e.color;
   ctx.shadowBlur = 18;
 
   // Tentacoli attorno.
@@ -153,17 +153,17 @@ export function drawShooter(ctx, e) {
   ctx.fill();
 
   // Grande occhio centrale che guarda in basso.
-  if (e.hitFlash <= 0) eye(ctx, 0, 0, 7, PALETTE.shooter, 1, blink);
+  if (e.hitFlash <= 0) eye(ctx, 0, 0, 7, e.color, 1, blink);
   ctx.restore();
   ctx.shadowBlur = 0;
 }
 
 // BOSS → kraken/cervello spaziale: corpo lobato, grande occhio, tentacoli.
 export function drawBoss(ctx, b, enraged) {
-  const base = b.hitFlash > 0 ? "#ffffff" : PALETTE.boss;
+  const base = b.hitFlash > 0 ? "#ffffff" : b.color;
   ctx.save();
   ctx.translate(b.x, b.y);
-  ctx.shadowColor = PALETTE.boss;
+  ctx.shadowColor = b.color;
   ctx.shadowBlur = enraged ? 42 : 30;
 
   // Tentacoli lunghi che ondeggiano.
@@ -212,7 +212,7 @@ export function drawBoss(ctx, b, enraged) {
   // Grande occhio centrale (rosso in furia).
   if (b.hitFlash <= 0) {
     const pulse = enraged ? 1 + Math.sin(b.t * 12) * 0.12 : 1;
-    eye(ctx, 0, 0, 15 * pulse, enraged ? PALETTE.boss : PALETTE.bossEye, 1, 1);
+    eye(ctx, 0, 0, 15 * pulse, enraged ? b.color : b.colorEye, 1, 1);
   }
   ctx.restore();
   ctx.shadowBlur = 0;

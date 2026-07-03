@@ -1,4 +1,6 @@
-// La navicella del giocatore: movimento (tastiera+mouse), sparo, scudo, tri-shot.
+// La navicella del giocatore: movimento (tastiera+mouse), sparo a livelli
+// persistenti, scudo, bombe. Le armi si potenziano raccogliendo "Power" e
+// scendono di un livello quando si viene colpiti (niente timer).
 import { clamp, TAU } from "./utils.js";
 import { input } from "./input.js";
 import { Bullet } from "./bullets.js";
@@ -6,7 +8,33 @@ import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
 
 const SPEED = 340;
-const FIRE_COOLDOWN = 0.16;
+const BASE_COOLDOWN = 0.16;
+export const MAX_WEAPON = 4;
+
+// Schema di sparo (puro, testabile): velocità dei proiettili per livello arma.
+// dx = offset orizzontale rispetto al muso; vx/vy = velocità.
+export function shotPattern(level) {
+  if (level <= 0) return [{ dx: 0, vx: 0, vy: -640 }];
+  if (level === 1)
+    return [
+      { dx: -8, vx: 0, vy: -640 },
+      { dx: 8, vx: 0, vy: -640 },
+    ];
+  if (level === 2)
+    return [
+      { dx: 0, vx: 0, vy: -660 },
+      { dx: 0, vx: -170, vy: -600 },
+      { dx: 0, vx: 170, vy: -600 },
+    ];
+  // Livelli 3 e 4: spread a 5 vie.
+  return [
+    { dx: 0, vx: 0, vy: -660 },
+    { dx: 0, vx: -140, vy: -620 },
+    { dx: 0, vx: 140, vy: -620 },
+    { dx: 0, vx: -300, vy: -540 },
+    { dx: 0, vx: 300, vy: -540 },
+  ];
+}
 
 export class Player {
   constructor(w, h) {
@@ -18,10 +46,12 @@ export class Player {
     this.lives = 3;
     this.cooldown = 0;
     this.shieldTime = 0;
-    this.tripleTime = 0;
-    this.invuln = 0;  // brevi frame di invulnerabilità dopo un colpo
-    this.muzzle = 0;  // lampo alla bocca del cannone quando spara
-    this.recoil = 0;  // rinculo visivo
+    this.weaponLevel = 0; // 0..MAX_WEAPON, persistente
+    this.bombs = 2;
+    this.rocketCd = 0; // cadenza dei razzi (gestita da main a L4)
+    this.invuln = 0;   // brevi frame di invulnerabilità dopo un colpo
+    this.muzzle = 0;   // lampo alla bocca del cannone quando spara
+    this.recoil = 0;   // rinculo visivo
   }
 
   get hasShield() {
@@ -29,22 +59,29 @@ export class Player {
   }
 
   addPowerup(type) {
-    if (type === "triple") this.tripleTime = 8;
+    if (type === "power") this.weaponLevel = Math.min(MAX_WEAPON, this.weaponLevel + 1);
+    else if (type === "bomb") this.bombs = Math.min(5, this.bombs + 1);
     else if (type === "shield") this.shieldTime = 6;
     else if (type === "life") this.lives = Math.min(5, this.lives + 1);
   }
 
-  // Ritorna true se il player sopravvive, false se ha perso l'ultima vita.
+  // Esito del colpo subìto, per dare feedback in main.
+  // Ritorna "shield" | "weapon" | "life" | "dead".
   takeHit() {
-    if (this.invuln > 0) return true;
+    if (this.invuln > 0) return "shield"; // già invulnerabile: nessun effetto
     if (this.hasShield) {
       this.shieldTime = 0;
-      this.invuln = 0.8;
-      return true;
+      this.invuln = 0.9;
+      return "shield";
+    }
+    if (this.weaponLevel > 0) {
+      this.weaponLevel -= 1; // l'arma fa da scudo: scendi di livello
+      this.invuln = 1.0;
+      return "weapon";
     }
     this.lives -= 1;
     this.invuln = 1.2;
-    return this.lives > 0;
+    return this.lives > 0 ? "life" : "dead";
   }
 
   update(dt, bullets) {
@@ -60,28 +97,24 @@ export class Player {
 
     this.cooldown -= dt;
     this.shieldTime = Math.max(0, this.shieldTime - dt);
-    this.tripleTime = Math.max(0, this.tripleTime - dt);
     this.invuln = Math.max(0, this.invuln - dt);
+    this.rocketCd = Math.max(0, this.rocketCd - dt);
     this.muzzle = Math.max(0, this.muzzle - dt * 6);
     this.recoil = Math.max(0, this.recoil - dt * 8);
 
     if (input.firing && this.cooldown <= 0) {
       this.shoot(bullets);
-      this.cooldown = FIRE_COOLDOWN;
+      this.cooldown = Math.max(0.1, BASE_COOLDOWN - this.weaponLevel * 0.008);
     }
   }
 
   shoot(bullets) {
     const opt = { color: PALETTE.bullet, core: PALETTE.bulletCore, r: 4, friendly: true };
-    if (this.tripleTime > 0) {
-      bullets.push(new Bullet(this.x, this.y - 16, 0, -620, opt));
-      bullets.push(new Bullet(this.x, this.y - 16, -180, -580, opt));
-      bullets.push(new Bullet(this.x, this.y - 16, 180, -580, opt));
-    } else {
-      bullets.push(new Bullet(this.x, this.y - 16, 0, -640, opt));
+    for (const s of shotPattern(this.weaponLevel)) {
+      bullets.push(new Bullet(this.x + s.dx, this.y - 16, s.vx, s.vy, opt));
     }
-    this.muzzle = 1;   // innesca il lampo
-    this.recoil = 5;   // e il rinculo
+    this.muzzle = 1;
+    this.recoil = 5;
     sfx.laser();
   }
 
@@ -90,9 +123,9 @@ export class Player {
     if (this.invuln > 0 && Math.floor(this.invuln * 12) % 2 === 0) return;
 
     ctx.save();
-    ctx.translate(this.x, this.y + this.recoil); // rinculo verso il basso
+    ctx.translate(this.x, this.y + this.recoil);
 
-    // Muzzle flash: bagliore luminoso davanti al muso quando spara.
+    // Muzzle flash.
     if (this.muzzle > 0) {
       ctx.globalAlpha = this.muzzle;
       const mg = ctx.createRadialGradient(0, -22, 0, 0, -22, 22);
@@ -105,7 +138,7 @@ export class Player {
       ctx.globalAlpha = 1;
     }
 
-    // Fiamma del motore (dietro, pulsante).
+    // Fiamma del motore.
     ctx.fillStyle = PALETTE.flame;
     ctx.shadowColor = PALETTE.flame;
     ctx.shadowBlur = 16;
@@ -116,7 +149,23 @@ export class Player {
     ctx.closePath();
     ctx.fill();
 
-    // Scafo: gradiente dal nucleo chiaro al neon, con alone.
+    // Pod laterali che compaiono salendo di livello arma.
+    if (this.weaponLevel >= 1) {
+      ctx.fillStyle = PALETTE.player;
+      ctx.shadowColor = PALETTE.player;
+      ctx.shadowBlur = 12;
+      const spread = 11 + this.weaponLevel;
+      for (const sx of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(sx * spread, 2);
+        ctx.lineTo(sx * (spread + 5), 12);
+        ctx.lineTo(sx * (spread - 2), 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Scafo con gradiente + alone.
     const g = ctx.createLinearGradient(0, -18, 0, 14);
     g.addColorStop(0, PALETTE.playerCore);
     g.addColorStop(1, PALETTE.player);
@@ -131,7 +180,7 @@ export class Player {
     ctx.closePath();
     ctx.fill();
 
-    // Cabina: piccolo nucleo luminoso.
+    // Cabina.
     ctx.shadowBlur = 0;
     ctx.fillStyle = PALETTE.bulletCore;
     ctx.beginPath();

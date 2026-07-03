@@ -1,11 +1,13 @@
 // Game loop principale e macchina a stati (menu / gioco / game over).
-import { rand, randInt, circleHit, TAU } from "./utils.js";
-import { initInput, input, consumeStart, onFirstInteraction } from "./input.js";
+import { rand, randInt, circleHit, comboMultiplier, TAU } from "./utils.js";
+import { initInput, input, consumeStart, consumeBomb, onFirstInteraction } from "./input.js";
 import { unlockAudio, sfx } from "./audio.js";
-import { Player } from "./player.js";
+import { Player, MAX_WEAPON } from "./player.js";
 import { Enemy, Boss } from "./enemies.js";
 import { PowerUp } from "./powerups.js";
 import { ParticleSystem } from "./particles.js";
+import { Rocket, nearestEnemy } from "./rockets.js";
+import { worldForLevel } from "./worlds.js";
 import { PALETTE, FONT, FONT_MONO } from "./palette.js";
 
 const canvas = document.getElementById("game");
@@ -27,42 +29,41 @@ const stars = Array.from({ length: 150 }, () => {
     y: rand(0, H),
     z,
     size: z < 0.5 ? 1 : z < 0.8 ? 1.6 : 2.4,
-    tw: rand(0, TAU),      // fase del twinkle
-    twSpeed: rand(1.5, 4), // velocità del twinkle
+    tw: rand(0, TAU),
+    twSpeed: rand(1.5, 4),
   };
 });
 
-// Nebulosa di sfondo disegnata UNA volta su un canvas offscreen (performance).
+// Nebulosa di sfondo su canvas offscreen; ricostruita al cambio di mondo.
 const bgCanvas = document.createElement("canvas");
 bgCanvas.width = W;
 bgCanvas.height = H;
-(function buildBackground() {
+const NEBULA_POS = [
+  { x: W * 0.25, y: H * 0.3, r: 320 },
+  { x: W * 0.8, y: H * 0.2, r: 280 },
+  { x: W * 0.6, y: H * 0.75, r: 360 },
+  { x: W * 0.1, y: H * 0.85, r: 240 },
+];
+function buildBackground(theme) {
   const bg = bgCanvas.getContext("2d");
   const grad = bg.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, PALETTE.bgTop);
-  grad.addColorStop(1, PALETTE.bgBottom);
+  grad.addColorStop(0, theme.bgTop);
+  grad.addColorStop(1, theme.bgBottom);
   bg.fillStyle = grad;
   bg.fillRect(0, 0, W, H);
-  // Macchie di nebulosa (radial gradient) per dare profondità e colore.
-  const blobs = [
-    { x: W * 0.25, y: H * 0.3, r: 320, c: PALETTE.nebulaA },
-    { x: W * 0.8, y: H * 0.2, r: 280, c: PALETTE.nebulaB },
-    { x: W * 0.6, y: H * 0.75, r: 360, c: PALETTE.nebulaC },
-    { x: W * 0.1, y: H * 0.85, r: 240, c: PALETTE.nebulaB },
-  ];
-  for (const b of blobs) {
-    const g = bg.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
-    g.addColorStop(0, b.c);
+  NEBULA_POS.forEach((pos, i) => {
+    const c = theme.nebula[i % theme.nebula.length];
+    const g = bg.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, pos.r);
+    g.addColorStop(0, c);
     g.addColorStop(1, "rgba(0,0,0,0)");
     bg.fillStyle = g;
     bg.beginPath();
-    bg.arc(b.x, b.y, b.r, 0, TAU);
+    bg.arc(pos.x, pos.y, pos.r, 0, TAU);
     bg.fill();
-  }
-})();
+  });
+}
 
 let bgTime = 0; // tempo globale per il twinkle
-
 let game;
 
 function newGame() {
@@ -72,68 +73,81 @@ function newGame() {
     enemies: [],
     playerBullets: [],
     enemyBullets: [],
+    rockets: [],
     powerups: [],
     particles: new ParticleSystem(),
     score: 0,
     wave: 0,
+    level: 1,
+    theme: worldForLevel(1),
     waveCooldown: 1.2,
     boss: null,
+    banner: null, // messaggio "MONDO X"
     highScore: Number(localStorage.getItem(HS_KEY) || 0),
-    flash: 0,       // flash bianco schermo quando il player viene colpito
-    combo: 0,       // uccisioni in catena
-    comboTimer: 0,  // tempo rimasto prima che la combo scada
-    hitStop: 0,     // freeze breve del gameplay per dare "peso" ai colpi
-    popups: [],     // scritte fluttuanti (punteggio, combo)
+    flash: 0,
+    combo: 0,
+    comboTimer: 0,
+    hitStop: 0,
+    popups: [],
   };
-}
-
-// Moltiplicatore in base alla combo: x1, x1.5 (5), x2 (10), x3 (20)...
-function comboMult() {
-  const c = game.combo;
-  if (c >= 20) return 3;
-  if (c >= 10) return 2;
-  if (c >= 5) return 1.5;
-  return 1;
 }
 
 function addPopup(x, y, text, color) {
   game.popups.push({ x, y, text, color, life: 0.9, vy: -46 });
 }
+
 game = newGame();
+buildBackground(game.theme);
 
 function startPlaying() {
   const hs = game.highScore;
   game = newGame();
   game.highScore = hs;
   game.state = State.PLAY;
+  buildBackground(game.theme);
+}
+
+// Fattore di difficoltà crescente con ondate e livelli (con cap).
+function difficulty() {
+  return Math.min(2.3, 1 + (game.wave - 1) * 0.03 + (game.level - 1) * 0.12);
 }
 
 function spawnWave() {
   game.wave += 1;
-  // Ogni 5 ondate: boss.
+  const diff = difficulty();
+  // Ogni 5 ondate: boss (del mondo corrente).
   if (game.wave % 5 === 0) {
-    game.boss = new Boss(W, game.wave / 5);
+    game.boss = new Boss(W, game.level, game.theme.boss, diff);
     sfx.boss();
     return;
   }
-  const count = Math.min(4 + game.wave, 14);
+  const count = Math.min(4 + game.wave, 16);
   const types = ["straight"];
   if (game.wave >= 2) types.push("zigzag");
   if (game.wave >= 3) types.push("shooter");
+  const speedMul = 1 + (diff - 1) * 0.5;
   for (let i = 0; i < count; i++) {
     const type = types[randInt(0, types.length - 1)];
     const x = rand(50, W - 50);
-    // Dalla 3ª ondata compaiono varianti (pattern alternativo) con prob. crescente.
     const variant = game.wave >= 3 && Math.random() < 0.4 ? 1 : 0;
-    const e = new Enemy(type, x, W, variant);
-    e.y = -30 - rand(0, 300); // sfalsati in verticale
+    const e = new Enemy(type, x, W, variant, game.theme.enemy[type], diff);
+    e.speed *= speedMul;
+    e.y = -30 - rand(0, 300);
     game.enemies.push(e);
   }
 }
 
+// Sale di mondo dopo aver battuto il boss: cambia scenario e colori.
+function advanceLevel() {
+  game.level += 1;
+  game.theme = worldForLevel(game.level);
+  buildBackground(game.theme);
+  game.banner = { text: `MONDO ${game.level} — ${game.theme.name}`, life: 2.8, color: game.theme.enemy.straight };
+}
+
 // Aggiunge punteggio applicando il moltiplicatore combo; mostra uno score-pop.
 function addScore(base, x, y) {
-  const mult = comboMult();
+  const mult = comboMultiplier(game.combo);
   const gained = Math.round(base * mult);
   game.score += gained;
   if (game.score > game.highScore) {
@@ -162,7 +176,6 @@ function update(dt) {
   game.particles.update(dt);
   game.flash = Math.max(0, game.flash - dt * 3);
 
-  // Scritte fluttuanti (score-pop): vivono anche fuori dallo stato PLAY.
   for (const pu of game.popups) {
     pu.y += pu.vy * dt;
     pu.vy *= 0.9;
@@ -170,12 +183,19 @@ function update(dt) {
   }
   game.popups = game.popups.filter((p) => p.life > 0);
 
+  if (game.banner) {
+    game.banner.life -= dt;
+    if (game.banner.life <= 0) game.banner = null;
+  }
+
   if (game.state !== State.PLAY) {
-    if (consumeStart()) {
-      if (game.state === State.MENU || game.state === State.GAMEOVER) startPlaying();
-    }
+    if (consumeStart()) startPlaying();
+    consumeBomb(); // scarta l'input bomba fuori dal gioco
     return;
   }
+
+  // Bomba (bottone del panico).
+  if (consumeBomb() && game.player.bombs > 0) detonateBomb();
 
   // Hit-stop: congela brevemente il gameplay per dare peso ai colpi/kill.
   if (game.hitStop > 0) {
@@ -183,7 +203,6 @@ function update(dt) {
     return;
   }
 
-  // Decadimento della combo.
   if (game.combo > 0) {
     game.comboTimer -= dt;
     if (game.comboTimer <= 0) game.combo = 0;
@@ -192,27 +211,32 @@ function update(dt) {
   const p = game.player;
   p.update(dt, game.playerBullets);
 
-  // Proiettili.
+  // Razzi a ricerca al livello arma massimo.
+  if (p.weaponLevel >= MAX_WEAPON && p.rocketCd <= 0) {
+    const tgt = nearestEnemy(p.x, p.y, game.enemies, game.boss);
+    if (tgt) {
+      game.rockets.push(new Rocket(p.x, p.y - 10));
+      p.rocketCd = 0.55;
+    }
+  }
+
   for (const b of game.playerBullets) b.update(dt, W, H);
   for (const b of game.enemyBullets) b.update(dt, W, H);
-
-  // Nemici.
+  for (const r of game.rockets) r.update(dt, nearestEnemy(r.x, r.y, game.enemies, game.boss), W, H);
   for (const e of game.enemies) e.update(dt, game.enemyBullets, p.x);
   if (game.boss) game.boss.update(dt, game.enemyBullets, p.x);
-
-  // Power-up.
   for (const pu of game.powerups) pu.update(dt, H);
 
   handleCollisions();
 
-  // Pulizia.
   game.playerBullets = game.playerBullets.filter((b) => !b.dead);
   game.enemyBullets = game.enemyBullets.filter((b) => !b.dead);
+  game.rockets = game.rockets.filter((r) => !r.dead);
   game.enemies = game.enemies.filter((e) => !e.dead);
   game.powerups = game.powerups.filter((pu) => !pu.dead);
   if (game.boss && game.boss.dead) game.boss = null;
 
-  // Gestione ondate: quando tutto è pulito, prossima ondata dopo un cooldown.
+  // Ondate: quando è tutto pulito, prossima ondata dopo un cooldown.
   if (game.enemies.length === 0 && !game.boss) {
     game.waveCooldown -= dt;
     if (game.waveCooldown <= 0) {
@@ -223,19 +247,56 @@ function update(dt) {
 }
 
 function killEnemy(e) {
-  game.particles.burst(e.x, e.y, e.isBoss ? PALETTE.boss : PALETTE.zigzag, e.isBoss ? 70 : 22);
+  const col = e.color || PALETTE.zigzag;
+  game.particles.burst(e.x, e.y, e.isBoss ? col : col, e.isBoss ? 70 : 22);
   game.particles.addShake(e.isBoss ? 22 : 7);
-  game.hitStop = Math.max(game.hitStop, e.isBoss ? 0.11 : 0.045); // peso del colpo
+  game.hitStop = Math.max(game.hitStop, e.isBoss ? 0.11 : 0.045);
   sfx.explosion();
-  // Combo: sale a ogni kill, si azzera se passa troppo tempo tra un kill e l'altro.
   game.combo += 1;
   game.comboTimer = 2.2;
   addScore(e.score, e.x, e.y);
-  // Chance di drop power-up.
-  const chance = e.isBoss ? 1 : 0.12;
+  const chance = e.isBoss ? 1 : 0.13;
   if (Math.random() < chance) {
     game.powerups.push(new PowerUp(e.x, e.y, PowerUp.randomType()));
   }
+  if (e.isBoss) advanceLevel();
+}
+
+function explodeRocket(r) {
+  game.particles.burst(r.x, r.y, PALETTE.flame, 24);
+  game.particles.addShake(8);
+  sfx.explosion();
+  for (const e of game.enemies) {
+    if (e.dead) continue;
+    const dx = e.x - r.x;
+    const dy = e.y - r.y;
+    if (dx * dx + dy * dy < 55 * 55 && e.hit(2)) killEnemy(e);
+  }
+  if (game.boss && !game.boss.dead) {
+    const dx = game.boss.x - r.x;
+    const dy = game.boss.y - r.y;
+    if (dx * dx + dy * dy < 70 * 70 && game.boss.hit(2)) killEnemy(game.boss);
+  }
+}
+
+function detonateBomb() {
+  const p = game.player;
+  p.bombs -= 1;
+  for (const b of game.enemyBullets) b.dead = true;
+  for (const e of game.enemies) {
+    if (!e.dead) {
+      killEnemy(e);
+      e.dead = true;
+    }
+  }
+  if (game.boss && !game.boss.dead && game.boss.hit(8)) killEnemy(game.boss);
+  game.particles.burst(p.x, p.y, "#ffffff", 40);
+  game.particles.burst(W / 2, H / 2, PALETTE.combo, 46);
+  game.particles.addShake(26);
+  game.flash = 0.5;
+  p.invuln = Math.max(p.invuln, 1.0);
+  addPopup(p.x, p.y - 24, "BOMBA!", "#ff9a3f");
+  sfx.explosion();
 }
 
 function handleCollisions() {
@@ -247,7 +308,7 @@ function handleCollisions() {
     for (const e of game.enemies) {
       if (!e.dead && circleHit(b, e)) {
         b.dead = true;
-        game.particles.burst(b.x, b.y, "#7df9ff", 5);
+        game.particles.burst(b.x, b.y, PALETTE.bullet, 5);
         if (e.hit(1)) killEnemy(e);
         break;
       }
@@ -257,6 +318,23 @@ function handleCollisions() {
       b.dead = true;
       game.particles.burst(b.x, b.y, "#ffffff", 6);
       if (game.boss.hit(1)) killEnemy(game.boss);
+    }
+  }
+
+  // Razzi vs nemici/boss (esplosione ad area).
+  for (const r of game.rockets) {
+    if (r.dead) continue;
+    let hit = false;
+    for (const e of game.enemies) {
+      if (!e.dead && circleHit(r, e)) {
+        hit = true;
+        break;
+      }
+    }
+    if (!hit && game.boss && !game.boss.dead && circleHit(r, game.boss)) hit = true;
+    if (hit) {
+      explodeRocket(r);
+      r.dead = true;
     }
   }
 
@@ -272,7 +350,7 @@ function handleCollisions() {
   for (const e of game.enemies) {
     if (!e.dead && circleHit(e, p)) {
       e.dead = true;
-      game.particles.burst(e.x, e.y, "#ffd23f", 16);
+      game.particles.burst(e.x, e.y, e.color, 16);
       damagePlayer();
     }
   }
@@ -282,7 +360,9 @@ function handleCollisions() {
     if (!pu.dead && circleHit(pu, p)) {
       pu.dead = true;
       p.addPowerup(pu.type);
-      game.particles.burst(pu.x, pu.y, "#4dffa6", 14);
+      game.particles.burst(pu.x, pu.y, PALETTE.shield, 14);
+      const label = { power: "ARMA +1", bomb: "BOMBA +1", shield: "SCUDO", life: "VITA +1" }[pu.type];
+      addPopup(pu.x, pu.y - 20, label, PALETTE.ui);
       sfx.powerup();
     }
   }
@@ -291,28 +371,29 @@ function handleCollisions() {
 function damagePlayer() {
   const p = game.player;
   if (p.invuln > 0) return;
-  const survived = p.takeHit();
-  game.particles.burst(p.x, p.y, "#00e5ff", 22);
+  const result = p.takeHit();
+  game.particles.burst(p.x, p.y, PALETTE.player, 22);
   game.particles.addShake(14);
   game.flash = 0.6;
   sfx.hit();
-  if (!survived) {
-    game.state = State.GAMEOVER;
-  }
+  if (result === "weapon") addPopup(p.x, p.y - 24, "ARMA -1", PALETTE.combo);
+  else if (result === "shield") addPopup(p.x, p.y - 24, "SCUDO ROTTO", PALETTE.shield);
+  if (result === "dead") game.state = State.GAMEOVER;
 }
 
 // ---------- RENDER ----------
 
 function drawStars() {
+  const col = game.theme.star;
   for (const s of stars) {
     const tw = 0.6 + 0.4 * Math.sin(bgTime * s.twSpeed + s.tw);
     ctx.globalAlpha = Math.min(1, s.z * tw);
     if (s.size > 2) {
-      ctx.fillStyle = PALETTE.starBright;
-      ctx.shadowColor = PALETTE.star;
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = col;
       ctx.shadowBlur = 6;
     } else {
-      ctx.fillStyle = PALETTE.star;
+      ctx.fillStyle = col;
       ctx.shadowBlur = 0;
     }
     ctx.fillRect(s.x, s.y, s.size, s.size);
@@ -337,24 +418,50 @@ function drawPopups() {
 }
 
 function drawHUD() {
+  const pl = game.player;
   ctx.textBaseline = "top";
   ctx.shadowBlur = 0;
 
-  // Punteggio (grande, monospace) + ondata.
+  // Punteggio + ondata/mondo.
   ctx.textAlign = "left";
   ctx.fillStyle = PALETTE.ui;
   ctx.font = `bold 22px ${FONT_MONO}`;
   ctx.fillText(String(game.score).padStart(6, "0"), 16, 12);
   ctx.font = `11px ${FONT_MONO}`;
   ctx.fillStyle = PALETTE.uiDim;
-  ctx.fillText(`ONDATA ${game.wave}`, 16, 40);
+  ctx.fillText(`ONDATA ${game.wave}  ·  MONDO ${game.level}`, 16, 40);
+
+  // Livello arma (pips).
+  ctx.fillStyle = PALETTE.uiDim;
+  ctx.fillText("ARMA", 16, 56);
+  for (let i = 0; i < MAX_WEAPON; i++) {
+    ctx.fillStyle = i < pl.weaponLevel ? PALETTE.bullet : "rgba(255,255,255,0.18)";
+    ctx.fillRect(52 + i * 12, 57, 8, 8);
+  }
+
+  // Bombe.
+  ctx.fillStyle = PALETTE.uiDim;
+  ctx.fillText("BOMBE", 16, 72);
+  for (let i = 0; i < pl.bombs; i++) {
+    ctx.fillStyle = "#ff9a3f";
+    ctx.shadowColor = "#ff9a3f";
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(58 + i * 14, 77, 4, 0, TAU);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  if (pl.shieldTime > 0) {
+    ctx.fillStyle = PALETTE.shield;
+    ctx.fillText(`SCUDO ${Math.ceil(pl.shieldTime)}s`, 16, 90);
+  }
 
   // Record + vite a destra.
   ctx.textAlign = "right";
   ctx.fillStyle = PALETTE.uiDim;
   ctx.font = `11px ${FONT_MONO}`;
   ctx.fillText(`RECORD ${String(game.highScore).padStart(6, "0")}`, W - 16, 14);
-  for (let i = 0; i < game.player.lives; i++) {
+  for (let i = 0; i < pl.lives; i++) {
     const x = W - 24 - i * 24;
     const y = 44;
     ctx.fillStyle = PALETTE.player;
@@ -371,7 +478,7 @@ function drawHUD() {
 
   // Combo al centro in alto, con barra del timer.
   if (game.combo >= 2) {
-    const mult = comboMult();
+    const mult = comboMultiplier(game.combo);
     const t = Math.max(0, Math.min(1, game.comboTimer / 2.2));
     ctx.textAlign = "center";
     ctx.fillStyle = PALETTE.combo;
@@ -387,20 +494,21 @@ function drawHUD() {
     ctx.fillStyle = PALETTE.combo;
     ctx.fillRect(W / 2 - bw / 2, 42, bw * t, 4);
   }
+}
 
-  // Power-up attivi.
-  let py = 58;
-  ctx.textAlign = "left";
-  ctx.font = `11px ${FONT_MONO}`;
-  if (game.player.tripleTime > 0) {
-    ctx.fillStyle = PALETTE.triple;
-    ctx.fillText(`TRIPLO ${Math.ceil(game.player.tripleTime)}s`, 16, py);
-    py += 16;
-  }
-  if (game.player.shieldTime > 0) {
-    ctx.fillStyle = PALETTE.shield;
-    ctx.fillText(`SCUDO ${Math.ceil(game.player.shieldTime)}s`, 16, py);
-  }
+function drawBanner() {
+  if (!game.banner) return;
+  const b = game.banner;
+  ctx.globalAlpha = Math.min(1, b.life / 0.8);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = b.color;
+  ctx.shadowColor = b.color;
+  ctx.shadowBlur = 24;
+  ctx.font = `bold 34px ${FONT}`;
+  ctx.fillText(b.text, W / 2, H * 0.3);
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
 }
 
 function drawCenteredText(lines) {
@@ -417,7 +525,6 @@ function drawCenteredText(lines) {
 }
 
 function render() {
-  // Sfondo statico (nebulosa) disegnato dal canvas offscreen: niente black edges.
   ctx.drawImage(bgCanvas, 0, 0);
 
   ctx.save();
@@ -428,6 +535,7 @@ function render() {
   if (game.state === State.PLAY || game.state === State.GAMEOVER) {
     for (const b of game.playerBullets) b.draw(ctx);
     for (const b of game.enemyBullets) b.draw(ctx);
+    for (const r of game.rockets) r.draw(ctx);
     for (const e of game.enemies) e.draw(ctx);
     if (game.boss) game.boss.draw(ctx);
     for (const pu of game.powerups) pu.draw(ctx);
@@ -438,51 +546,63 @@ function render() {
 
   ctx.restore();
 
-  // Flash bianco quando colpito (contenuto per accessibilità).
   if (game.flash > 0) {
     ctx.fillStyle = `rgba(255,255,255,${game.flash * 0.35})`;
     ctx.fillRect(0, 0, W, H);
   }
 
-  if (game.state === State.PLAY) drawHUD();
+  if (game.state === State.PLAY) {
+    drawHUD();
+    drawBanner();
+  }
 
   if (game.state === State.MENU) {
     drawCenteredText([
-      { text: "NEON SPACE SHOOTER", y: H / 2 - 70, font: `bold 46px ${FONT}`, color: PALETTE.player, glow: true },
-      { text: "Premi un tasto o clicca per iniziare", y: H / 2 + 10, color: PALETTE.ui },
-      { text: "Frecce/WASD o mouse per muoverti — Spazio o click per sparare", y: H / 2 + 44, font: `13px ${FONT}`, color: PALETTE.uiDim },
-      { text: "Incatena le uccisioni per far salire la COMBO e moltiplicare i punti!", y: H / 2 + 70, font: `13px ${FONT}`, color: PALETTE.combo },
+      { text: "NEON SPACE SHOOTER", y: H / 2 - 80, font: `bold 46px ${FONT}`, color: PALETTE.player, glow: true },
+      { text: "Premi un tasto o clicca per iniziare", y: H / 2 - 6, color: PALETTE.ui },
+      { text: "Muoviti: frecce/WASD o mouse · Spara: Spazio/click · Bomba: B", y: H / 2 + 30, font: `13px ${FONT}`, color: PALETTE.uiDim },
+      { text: "Raccogli POWER per potenziare l'arma (fino ai razzi). Se colpito, scendi di livello.", y: H / 2 + 54, font: `13px ${FONT}`, color: PALETTE.uiDim },
+      { text: "Incatena le uccisioni: la COMBO moltiplica i punti fino a x5!", y: H / 2 + 80, font: `13px ${FONT}`, color: PALETTE.combo },
     ]);
   } else if (game.state === State.GAMEOVER) {
     drawCenteredText([
       { text: "GAME OVER", y: H / 2 - 60, font: `bold 48px ${FONT}`, color: PALETTE.boss, glow: true },
       { text: `Punteggio: ${game.score}`, y: H / 2, font: `24px ${FONT}`, color: PALETTE.ui },
-      { text: `Record: ${game.highScore}`, y: H / 2 + 34, color: PALETTE.combo },
+      { text: `Mondo raggiunto: ${game.level} · Record: ${game.highScore}`, y: H / 2 + 34, color: PALETTE.combo },
       { text: "Premi un tasto o clicca per riprovare", y: H / 2 + 78, color: PALETTE.uiDim },
     ]);
   }
 }
 
-// ---------- LOOP ----------
+// ---------- LOOP + hook di sviluppo ----------
 
-// Hook di sviluppo: ?autostart=1 salta al gioco e lancia subito un'ondata
-// (comodo per screenshot/test automatici, innocuo per il giocatore).
-if (new URLSearchParams(location.search).get("autostart") === "1") {
+const params = new URLSearchParams(location.search);
+
+if (params.get("autostart") === "1") {
   startPlaying();
   spawnWave();
 }
 
-// Hook di sviluppo: ?showcase=1 mostra una di ogni creatura + il boss, ferme,
-// per verificare l'arte (screenshot). Non usato in gioco normale.
-if (new URLSearchParams(location.search).get("showcase") === "1") {
+// ?level=N: anteprima di un mondo con una creatura di ogni tipo + boss.
+const lvl = parseInt(params.get("level"), 10);
+if (params.get("showcase") === "1" || lvl >= 1) {
   startPlaying();
-  const e1 = new Enemy("straight", 160, W, 0); e1.y = 220; e1.speed = 0;
-  const e2 = new Enemy("zigzag", 320, W, 0); e2.y = 220; e2.speed = 0;
-  const e3 = new Enemy("shooter", 480, W, 0); e3.y = 220; e3.speed = 0;
-  game.enemies.push(e1, e2, e3);
-  game.boss = new Boss(W, 1);
+  if (lvl >= 1) {
+    game.level = lvl;
+    game.theme = worldForLevel(lvl);
+    buildBackground(game.theme);
+  }
+  const th = game.theme;
+  const mk = (type, x) => {
+    const e = new Enemy(type, x, W, 0, th.enemy[type], 1);
+    e.y = 220;
+    e.speed = 0;
+    return e;
+  };
+  game.enemies.push(mk("straight", 160), mk("zigzag", 320), mk("shooter", 480));
+  game.boss = new Boss(W, game.level, th.boss, 1);
   game.boss.entering = false;
-  game.boss.y = 420;
+  game.boss.y = 430;
 }
 
 let last = performance.now();

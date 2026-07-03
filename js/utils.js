@@ -13,3 +13,12 @@ export function circleHit(a, b) {
   const rr = a.r + b.r;
   return dx * dx + dy * dy <= rr * rr;
 }
+
+// Moltiplicatore di punteggio in base alla combo (x1 → x1.5 → x2 → x3 → x5).
+export function comboMultiplier(combo) {
+  if (combo >= 30) return 5;
+  if (combo >= 20) return 3;
+  if (combo >= 10) return 2;
+  if (combo >= 5) return 1.5;
+  return 1;
+}

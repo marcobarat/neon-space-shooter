@@ -7,7 +7,7 @@ import { PALETTE } from "./palette.js";
 import { drawStraight, drawZigzag, drawShooter, drawBoss } from "./creatures.js";
 
 export class Enemy {
-  constructor(type, x, w, variant = 0) {
+  constructor(type, x, w, variant = 0, color = null, fireMul = 1) {
     this.type = type;
     this.variant = variant;
     this.x = x;
@@ -22,6 +22,9 @@ export class Enemy {
     this.fireTimer = rand(1, 2.5);
     this.speed = type === "zigzag" ? 90 : 110;
     this.score = { straight: 100, zigzag: 150, shooter: 200 }[type];
+    // Colore dal tema del mondo (fallback alla palette base).
+    this.color = color || { straight: PALETTE.straight, zigzag: PALETTE.zigzag, shooter: PALETTE.shooter }[type];
+    this.fireMul = fireMul; // scala la cadenza di fuoco con la difficoltà
   }
 
   update(dt, enemyBullets, targetX) {
@@ -45,7 +48,7 @@ export class Enemy {
       if (this.fireTimer <= 0 && this.y > 0 && this.y < this.w) {
         if (this.variant === 1) {
           // variante: raffica a ventaglio di 3 colpi.
-          this.fireTimer = rand(2.2, 3.2);
+          this.fireTimer = rand(2.2, 3.2) / this.fireMul;
           for (let k = -1; k <= 1; k++) {
             enemyBullets.push(
               new Bullet(this.x, this.y + 12, k * 130, 240, {
@@ -57,7 +60,7 @@ export class Enemy {
           }
         } else {
           // base: singolo colpo mirato al player.
-          this.fireTimer = rand(1.5, 3);
+          this.fireTimer = rand(1.5, 3) / this.fireMul;
           const dx = targetX - this.x;
           const dy = 300;
           const m = Math.hypot(dx, dy) || 1;
@@ -93,7 +96,7 @@ export class Enemy {
 }
 
 export class Boss {
-  constructor(w, level) {
+  constructor(w, level, color = PALETTE.boss, fireMul = 1) {
     this.w = w;
     this.x = w / 2;
     this.y = -60;
@@ -108,6 +111,8 @@ export class Boss {
     this.entering = true;
     this.score = 2000 + level * 500;
     this.isBoss = true;
+    this.color = color;     // colore del mondo
+    this.fireMul = fireMul; // cadenza scalata dalla difficoltà
   }
 
   get enraged() {
@@ -130,13 +135,13 @@ export class Boss {
     if (this.fireTimer <= 0) {
       if (this.enraged) {
         // Fase 2: spirale rotante, ma RADA e lenta -> schivabile.
-        this.fireTimer = 0.32;
+        this.fireTimer = 0.32 / this.fireMul;
         this.spiralAngle += 0.55;
         for (let k = 0; k < 2; k++) {
           const ang = this.spiralAngle + k * Math.PI;
           enemyBullets.push(
             new Bullet(this.x, this.y, Math.cos(ang) * 150, Math.abs(Math.sin(ang)) * 90 + 120, {
-              color: PALETTE.boss,
+              color: this.color,
               r: 6,
               friendly: false,
             })
@@ -144,13 +149,13 @@ export class Boss {
         }
       } else {
         // Fase 1: ventaglio più stretto e lento + colpo mirato.
-        this.fireTimer = 1.5;
+        this.fireTimer = 1.5 / this.fireMul;
         const n = 5;
         for (let i = 0; i < n; i++) {
           const ang = Math.PI / 2 + (i - (n - 1) / 2) * 0.26;
           enemyBullets.push(
             new Bullet(this.x, this.y + 30, Math.cos(ang) * 190, Math.sin(ang) * 190, {
-              color: PALETTE.boss,
+              color: this.color,
               r: 6,
               friendly: false,
             })

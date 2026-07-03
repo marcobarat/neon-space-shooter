@@ -40,6 +40,14 @@ export function consumeStart() {
   return v;
 }
 
+// bombPressed: edge-trigger per detonare una bomba (tasto B o Shift).
+let bombPressed = false;
+export function consumeBomb() {
+  const v = bombPressed;
+  bombPressed = false;
+  return v;
+}
+
 export function initInput(canvas) {
   window.addEventListener("keydown", (e) => {
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
@@ -47,6 +55,7 @@ export function initInput(canvas) {
     }
     keys.add(e.code);
     if (e.code === "Space") input.firing = true;
+    if ((e.code === "KeyB" || e.code === "ShiftLeft") && !e.repeat) bombPressed = true;
     startPressed = true;
     fireUnlock();
   });

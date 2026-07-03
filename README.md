@@ -9,7 +9,11 @@ i suoni sono sintetizzati con la Web Audio API. Semplice ma con tanto *game juic
 
 - **Movimento**: frecce / WASD **oppure** mouse
 - **Spara**: Spazio **oppure** click
-- Sopravvivi alle ondate di nemici, raccogli i power-up, batti il boss ogni 5 ondate.
+- **Bomba**: tasto **B** (o Shift) — ripulisce lo schermo e danneggia tutti
+- Raccogli **Power** per potenziare l'arma (fino ai razzi a ricerca). Se vieni
+  colpito scendi di un livello arma; perdi una vita solo a livello base.
+- Batti il boss per passare al **mondo successivo**: scenario, mostri e boss cambiano.
+- Incatena le uccisioni: la **combo** moltiplica i punti fino a **x5**.
 
 ### Avvio in locale
 
@@ -20,14 +24,17 @@ npm start          # avvia http://localhost:8123
 # poi apri http://localhost:8123 nel browser
 ```
 
-## ✨ Funzionalità (v1)
+## ✨ Funzionalità (v0.2.0)
 
-- Navicella controllabile da **tastiera e mouse**, con 3 vite
-- **3 tipi di nemici**: dritto, zigzag, sparatore
-- **Boss** ogni 5 ondate, con barra vita e ventaglio di colpi
-- **Power-up**: triplo colpo, scudo, vita extra
+- **Armi a livelli persistenti** + **razzi a ricerca** al livello massimo
+- **Bombe a scorta** con detonazione manuale (bottone del panico)
+- **5 mondi a tema** che ciclano: scenario, mostri e boss cambiano a ogni livello
+- **Mostri spaziali** animati (medusa, falena, occhio) + **kraken boss** a due fasi
+- **Combo** che moltiplica i punti fino a **x5**, con score-pop
+- **Difficoltà in salita** con ondate e livelli
+- **Power-up**: Power (arma+), Bomba, Scudo, Vita (drop pesati)
 - **Punteggio** e **record** salvato nel browser (`localStorage`)
-- Juice: particelle, esplosioni, screen shake, glow al neon, suoni, stelle in parallasse
+- Juice: particelle, esplosioni, screen shake, hit-stop, glow al neon, suoni
 - Stati: menu → gioco → game over con restart
 
 ## 🧪 Test
@@ -38,7 +45,7 @@ npm test           # test unitari sulla logica pura (runner integrato di Node)
 
 ## 🤖 Agenti di sviluppo
 
-Nella cartella `.claude/agents/` ci sono tre agenti Claude Code pensati per il ciclo di
+Nella cartella `.claude/agents/` ci sono sei agenti Claude Code pensati per il ciclo di
 release del gioco:
 
 | Agente | Cosa fa | Quando usarlo |
@@ -59,15 +66,19 @@ per la prossima release"*).
 index.html         canvas + bootstrap
 style.css          stile (sfondo neon, centratura)
 js/
-  main.js          game loop + macchina a stati
-  player.js        navicella
-  enemies.js       nemici + boss
-  bullets.js       proiettili
-  powerups.js      power-up
+  main.js          game loop + macchina a stati + mondi/difficoltà
+  player.js        navicella + armi a livelli + bombe
+  enemies.js       nemici + boss (colore dal mondo)
+  creatures.js     arte delle creature spaziali
+  worlds.js        mondi a tema (sfondo/colori per livello)
+  rockets.js       razzi a ricerca (homing)
+  bullets.js       proiettili con scia
+  powerups.js      power-up (Power/Bomba/Scudo/Vita)
   particles.js     particelle + screen shake
+  palette.js       palette neon + font
   audio.js         suoni sintetizzati (Web Audio)
-  input.js         tastiera + mouse
-  utils.js         collisioni, random, helper
+  input.js         tastiera + mouse + bomba
+  utils.js         collisioni, random, combo, helper
 tests/             test unitari (node:test)
 .claude/agents/    agenti di sviluppo
 ```
