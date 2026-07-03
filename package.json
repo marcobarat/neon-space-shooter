@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "python3 -m http.server 8123",
-    "test": "node --test"
+    "test": "node --test",
+    "notify": "node tools/notify-telegram.mjs"
   },
   "keywords": ["game", "canvas", "arcade", "shooter", "neon"],
   "license": "MIT"

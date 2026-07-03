@@ -15,6 +15,22 @@ import { PALETTE, FONT, FONT_MONO } from "./palette.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
+// Dimensione responsive: su mobile riempie lo schermo (portrait); su desktop
+// una colonna verticale centrata. Impostata PRIMA di leggere W/H.
+(function sizeCanvas() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let cssW, cssH;
+  if (vw < 760) { cssW = vw; cssH = vh; }
+  else { cssH = Math.min(vh * 0.94, 940); cssW = Math.round(cssH * 0.5625); }
+  canvas.width = Math.round(cssW);
+  canvas.height = Math.round(cssH);
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+})();
+// Al cambio di orientamento ricarico (ridimensiona tutto in modo pulito).
+window.addEventListener("orientationchange", () => setTimeout(() => location.reload(), 350));
+
 const W = canvas.width;
 const H = canvas.height;
 

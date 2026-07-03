@@ -111,18 +111,19 @@ export function initInput(canvas) {
   window.addEventListener("mouseup", () => { input.firing = false; });
 
   // ---- Touch ----
+  // La nave si posiziona SOPRA il dito di questo offset, così il pollice non la copre.
+  const TOUCH_OFFSET = 90;
   let moveTouchId = null;
   const onStart = (e) => {
     e.preventDefault();
     input.isTouch = true;
-    input.mouseActive = false; // il touch usa il movimento diretto verso il dito
     for (const t of e.changedTouches) {
       const p = canvasPoint(t.clientX, t.clientY);
       const b = hitButton(p);
       if (b) { trigger(b.id); startPressed = true; fireUnlock(); continue; }
       // Touch di movimento/sparo.
       moveTouchId = t.identifier;
-      input.mouseX = p.x; input.mouseY = p.y;
+      input.mouseX = p.x; input.mouseY = Math.max(0, p.y - TOUCH_OFFSET);
       input.mouseActive = true;
       input.firing = true;
       startPressed = true;
@@ -134,7 +135,7 @@ export function initInput(canvas) {
     for (const t of e.changedTouches) {
       if (t.identifier === moveTouchId) {
         const p = canvasPoint(t.clientX, t.clientY);
-        input.mouseX = p.x; input.mouseY = p.y;
+        input.mouseX = p.x; input.mouseY = Math.max(0, p.y - TOUCH_OFFSET);
       }
     }
   };
