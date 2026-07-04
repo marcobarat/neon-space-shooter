@@ -9,7 +9,7 @@ import { createBoss } from "./bosses.js";
 import { PowerUp } from "./powerups.js";
 import { ParticleSystem } from "./particles.js";
 import { Rocket, nearestEnemy } from "./rockets.js";
-import { worldForLevel } from "./worlds.js";
+import { worldForLevel, worldIndexForLevel } from "./worlds.js";
 import { initScene, updateScene, drawScene } from "./scene.js";
 import { SUPER_INFO, TIMESLOW_FACTOR, drawSuperIcon, Drone } from "./supers.js";
 import { PALETTE, FONT, FONT_MONO } from "./palette.js";
@@ -240,6 +240,7 @@ function startPlaying() {
   game.state = State.PLAY;
   buildBackground(game.theme);
   initScene(game.theme.scene, W, H, game.theme);
+  window.__galaxySetWorld?.(worldIndexForLevel(game.level));
 }
 
 function difficulty() {
@@ -285,6 +286,7 @@ function advanceLevel() {
   game.theme = worldForLevel(game.level);
   buildBackground(game.theme);
   initScene(game.theme.scene, W, H, game.theme);
+  window.__galaxySetWorld?.(worldIndexForLevel(game.level));
   game.banner = { text: `MONDO ${game.level}`, sub: game.theme.name, life: 3.0, color: game.theme.enemy.straight };
 }
 
@@ -921,7 +923,15 @@ function drawLines(lines) {
 }
 
 function render() {
-  ctx.drawImage(bgCanvas, 0, 0);
+  // Sfondo = galassia 3D (canvas WebGL dietro). In 2D puliamo trasparente;
+  // se il 3D non è disponibile, ripieghiamo sulla nebulosa 2D.
+  if (window.__galaxyFailed) {
+    ctx.drawImage(bgCanvas, 0, 0);
+  } else {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(3,2,10,0.32)"; // velo per leggibilità sopra la galassia
+    ctx.fillRect(0, 0, W, H);
+  }
 
   ctx.save();
   game.particles.applyShake(ctx);

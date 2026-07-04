@@ -7,12 +7,33 @@
   <meta name="mobile-web-app-capable" content="yes">
   <title>Neon Space Shooter</title>
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
 </head>
 <body>
+  <!-- Sfondo galassia 3D (WebGL, dietro a tutto). -->
+  <canvas id="bg3d"></canvas>
   <div id="game-wrapper">
     <canvas id="game" width="540" height="960"></canvas>
   </div>
   <p class="hint">Muoviti: frecce/WASD o mouse (o trascina su mobile) · Spara: Spazio/click · Bomba: B · Super: E · Pausa: P</p>
+
+  <!-- Boot dello sfondo 3D: se three.js non carica, il gioco 2D funziona comunque. -->
+  <script type="module">
+    (async () => {
+      try {
+        const { initGalaxy, setGalaxyWorld } = await import("./js/galaxy3d.js");
+        initGalaxy(document.getElementById("bg3d"));
+        window.__galaxySetWorld = setGalaxyWorld;
+        setGalaxyWorld(0);
+      } catch (e) {
+        console.warn("Galaxy 3D non disponibile, uso lo sfondo 2D:", e);
+        document.getElementById("bg3d")?.remove();
+        window.__galaxyFailed = true;
+      }
+    })();
+  </script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

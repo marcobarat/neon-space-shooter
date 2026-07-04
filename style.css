@@ -1,8 +1,10 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html { background: #04030a; }
+
 html, body {
   height: 100%;
-  background: #04030a;
+  background: transparent;
   color: #cde;
   font-family: "Segoe UI", system-ui, sans-serif;
   display: flex;
@@ -19,15 +21,27 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Sfondo galassia 3D: copre l'intera viewport, dietro a tutto. */
+#bg3d {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  z-index: -1;
+  background: #04030a;
+}
+
 #game-wrapper {
   box-shadow: 0 0 40px rgba(0, 200, 255, 0.25), 0 0 8px rgba(255, 0, 200, 0.2);
   border-radius: 10px;
   line-height: 0;
+  position: relative;
   /* Le dimensioni del canvas sono impostate via JS (responsive). */
 }
 
-canvas {
-  background: #04030a;
+#game {
+  background: transparent; /* lascia vedere la galassia 3D dietro */
   border-radius: 10px;
   display: block;
   cursor: crosshair;
