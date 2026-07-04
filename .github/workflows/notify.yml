@@ -1,0 +1,48 @@
+name: Notifica Telegram
+
+# Manda un messaggio Telegram a ogni push su main (con esito dei test) e a ogni release.
+# Il token del bot NON è nel codice: sta nei GitHub Secrets del repo
+#   TELEGRAM_BOT_TOKEN  (obbligatorio)
+#   TELEGRAM_CHAT_ID    (obbligatorio)
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Esegui i test
+        id: test
+        run: npm test
+        continue-on-error: true
+      - name: Invia messaggio Telegram
+        # Tutti gli input non fidati passano da env (mai interpolati nello script):
+        # così restano DATI e non possono iniettare comandi shell.
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EVENT: ${{ github.event_name }}
+          REL_TAG: ${{ github.event.release.tag_name }}
+          REL_NAME: ${{ github.event.release.name }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          TEST_RES: ${{ steps.test.outcome }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+            echo "Secrets Telegram mancanti: salto la notifica."; exit 0
+          fi
+          if [ "$EVENT" = "release" ]; then
+            MSG="🚀 Neon Space Shooter — nuova release ${REL_TAG}"$'\n'"${REL_NAME}"
+          else
+            EMO="✅"; [ "$TEST_RES" != "success" ] && EMO="❌"
+            MSG="${EMO} Neon Space Shooter — push su main"$'\n'"test: ${TEST_RES}"$'\n'"${COMMIT_MSG}"
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=${MSG}" >/dev/null
