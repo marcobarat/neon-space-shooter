@@ -250,7 +250,7 @@ function difficulty() {
 const bossApi = {
   spawnMinion(x) {
     const diff = difficulty();
-    game.enemies.push(new Enemy("kamikaze", clamp(x, 20, W - 20), W, 0, game.theme.enemy.kamikaze, diff));
+    game.enemies.push(new Enemy("kamikaze", clamp(x, 20, W - 20), W, 0, game.theme.enemy.kamikaze, diff, worldIndexForLevel(game.level)));
   },
 };
 
@@ -258,7 +258,7 @@ function spawnWave() {
   game.wave += 1;
   const diff = difficulty();
   if (game.wave % 5 === 0) {
-    game.boss = createBoss(game.theme.bossType, W, game.level, game.theme.boss, diff);
+    game.boss = createBoss(game.theme.bossType, W, game.level, game.theme.boss, diff, worldIndexForLevel(game.level));
     sfx.boss();
     return;
   }
@@ -274,7 +274,7 @@ function spawnWave() {
     const type = types[randInt(0, types.length - 1)];
     const x = rand(40, W - 40);
     const variant = game.wave >= 3 && basics.includes(type) && Math.random() < 0.4 ? 1 : 0;
-    const e = new Enemy(type, x, W, variant, game.theme.enemy[type], diff);
+    const e = new Enemy(type, x, W, variant, game.theme.enemy[type], diff, worldIndexForLevel(game.level));
     if (type !== "tank" && type !== "sniper") e.speed *= speedMul;
     e.y = -30 - rand(0, 300);
     game.enemies.push(e);
@@ -502,7 +502,7 @@ function killEnemy(e) {
   if (Math.random() < chance) game.powerups.push(new PowerUp(e.x, e.y, PowerUp.randomType()));
   if (e.type === "splitter") {
     for (const s of [-1, 1]) {
-      const sp = new Enemy("splitling", e.x + s * 10, W, 0, e.color, 1);
+      const sp = new Enemy("splitling", e.x + s * 10, W, 0, e.color, 1, e.skin);
       sp.y = e.y;
       game.enemies.push(sp);
     }
@@ -1014,16 +1014,18 @@ if (params.get("showcase") === "1" || lvl >= 1) {
     game.theme = worldForLevel(lvl);
     buildBackground(game.theme);
     initScene(game.theme.scene, W, H, game.theme);
+    window.__galaxySetWorld?.(worldIndexForLevel(lvl));
   }
   const th = game.theme;
+  const wi = worldIndexForLevel(game.level);
   const mk = (type, x, y) => {
-    const e = new Enemy(type, x, W, 0, th.enemy[type], 1);
+    const e = new Enemy(type, x, W, 0, th.enemy[type], 1, wi);
     e.y = y; e.speed = 0;
     return e;
   };
   const pool = th.pool;
   pool.forEach((type, i) => game.enemies.push(mk(type, 80 + i * 110, 200)));
-  game.boss = createBoss(th.bossType, W, game.level, th.boss, 1);
+  game.boss = createBoss(th.bossType, W, game.level, th.boss, 1, wi);
   game.boss.entering = false;
   game.boss.y = H * 0.55;
 }

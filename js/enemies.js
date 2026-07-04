@@ -7,6 +7,7 @@ import { PALETTE } from "./palette.js";
 import {
   drawStraight, drawZigzag, drawShooter,
   drawTank, drawKamikaze, drawSplitter, drawSniper, drawMine,
+  applyMaterial,
 } from "./creatures.js";
 
 // Statistiche per tipo.
@@ -23,10 +24,11 @@ const STATS = {
 };
 
 export class Enemy {
-  constructor(type, x, w, variant = 0, color = null, fireMul = 1) {
+  constructor(type, x, w, variant = 0, color = null, fireMul = 1, skin = 0) {
     const st = STATS[type] || STATS.straight;
     this.type = type;
     this.variant = variant;
+    this.skin = skin; // indice del mondo → materiale (bio/bulloni/cristallo/magma/wire)
     this.x = x;
     this.y = -30;
     this.w = w;
@@ -170,16 +172,23 @@ export class Enemy {
 
   _drawShape(ctx) {
     switch (this.type) {
-      case "straight": return drawStraight(ctx, this);
-      case "zigzag": return drawZigzag(ctx, this);
-      case "shooter": return drawShooter(ctx, this);
-      case "tank": return drawTank(ctx, this);
-      case "kamikaze": return drawKamikaze(ctx, this);
+      case "straight": drawStraight(ctx, this); break;
+      case "zigzag": drawZigzag(ctx, this); break;
+      case "shooter": drawShooter(ctx, this); break;
+      case "tank": drawTank(ctx, this); break;
+      case "kamikaze": drawKamikaze(ctx, this); break;
       case "splitter":
-      case "splitling": return drawSplitter(ctx, this);
-      case "sniper": return drawSniper(ctx, this);
-      case "mine": return drawMine(ctx, this);
-      default: return drawStraight(ctx, this);
+      case "splitling": drawSplitter(ctx, this); break;
+      case "sniper": drawSniper(ctx, this); break;
+      case "mine": drawMine(ctx, this); break;
+      default: drawStraight(ctx, this);
+    }
+    // Materiale del mondo (skin) sopra la forma, centrato sull'entità.
+    if (this.hitFlash <= 0) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      applyMaterial(ctx, this, this.r);
+      ctx.restore();
     }
   }
 }

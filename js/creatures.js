@@ -472,3 +472,103 @@ export function drawMine(ctx, e) {
   ctx.restore();
   ctx.shadowBlur = 0;
 }
+
+// ---------- Materiale per MONDO ("skin") ----------
+// Stesso scheletro, materiale diverso per mondo: bio · bulloni · cristallo ·
+// magma · wireframe. Va chiamato con l'origine sul centro dell'entità (ctx già
+// traslato) e un raggio r. Niente shadowBlur (costo) — solo tratti leggeri.
+const MATERIALS = ["bio", "bolts", "crystal", "magma", "wire"];
+
+export function applyMaterial(ctx, ent, r) {
+  const kind = MATERIALS[(ent.skin || 0) % MATERIALS.length];
+  const t = ent.t || 0;
+  const c = ent.color || "#ffffff";
+  ctx.save();
+  ctx.shadowBlur = 0;
+  if (kind === "bio") {
+    // Vene traslucide + micro-cellule → alieno organico.
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = shade(c, -0.35);
+    ctx.lineWidth = 1.2;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(s * r * 0.15, -r * 0.7);
+      ctx.quadraticCurveTo(s * r * 0.7, 0, s * r * 0.2, r * 0.7);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = shade(c, -0.5);
+    ctx.beginPath();
+    ctx.arc(-r * 0.3, r * 0.2, r * 0.12, 0, TAU);
+    ctx.arc(r * 0.35, -r * 0.1, r * 0.1, 0, TAU);
+    ctx.fill();
+  } else if (kind === "bolts") {
+    // Bulloni sul bordo + fessura metallica → robo-organico.
+    ctx.fillStyle = "rgba(232,238,245,0.6)";
+    ctx.strokeStyle = "rgba(20,26,30,0.5)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU + 0.4;
+      const bx = Math.cos(a) * r * 0.72;
+      const by = Math.sin(a) * r * 0.72;
+      ctx.beginPath();
+      ctx.arc(bx, by, r * 0.09, 0, TAU);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(15,20,24,0.45)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.6, -r * 0.1);
+    ctx.lineTo(r * 0.6, r * 0.05);
+    ctx.stroke();
+  } else if (kind === "crystal") {
+    // Sfaccettature + glint speculare → cristallino/robotico.
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU + t * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(-r * 0.28, -r * 0.32, r * 0.12, 0, TAU);
+    ctx.fill();
+  } else if (kind === "magma") {
+    // Crepe incandescenti pulsanti → bio-magmatico.
+    const glow = 0.5 + 0.5 * Math.sin(t * 6);
+    ctx.strokeStyle = `rgba(255,${(120 + glow * 90) | 0},50,${0.5 + 0.4 * glow})`;
+    ctx.lineWidth = 1.6;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.6);
+      ctx.lineTo(s * r * 0.25, -r * 0.1);
+      ctx.lineTo(0, r * 0.15);
+      ctx.lineTo(s * r * 0.3, r * 0.6);
+      ctx.stroke();
+    }
+  } else {
+    // Wireframe olografico + scanline → alieno-digitale.
+    ctx.strokeStyle = withAlpha(c, 0.85);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const a = (i / 6) * TAU;
+      const px = Math.cos(a) * r * 0.8;
+      const py = Math.sin(a) * r * 0.8;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    const sy = Math.sin(t * 3) * r * 0.7;
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.8, sy);
+    ctx.lineTo(r * 0.8, sy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}

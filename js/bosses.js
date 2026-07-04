@@ -5,7 +5,7 @@ import { TAU, rand, punchScale } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE, shade, withAlpha } from "./palette.js";
-import { drawBoss, glowFill, eye, rim } from "./creatures.js";
+import { drawBoss, glowFill, eye, rim, applyMaterial } from "./creatures.js";
 
 const MONO = "'Consolas', 'SF Mono', ui-monospace, monospace";
 
@@ -121,6 +121,11 @@ class BossBase {
       ctx.restore();
     } else {
       this.drawBody(ctx);
+      // Materiale del mondo (skin) sopra il corpo del boss.
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      applyMaterial(ctx, this, this.r * 0.9);
+      ctx.restore();
     }
     this.drawHealth(ctx);
   }
@@ -435,7 +440,9 @@ const TYPES = {
   laser: LaserBoss,
 };
 
-export function createBoss(bossType, w, level, color, fireMul) {
+export function createBoss(bossType, w, level, color, fireMul, skin = 0) {
   const C = TYPES[bossType] || KrakenBoss;
-  return new C(w, level, color, fireMul);
+  const boss = new C(w, level, color, fireMul);
+  boss.skin = skin; // indice del mondo → materiale
+  return boss;
 }
