@@ -46,36 +46,121 @@ const SHARE_URL = "marcobarat.github.io/neon-space-shooter";
 // Stelle su 3 layer con parallasse + twinkle.
 const stars = Array.from({ length: 160 }, () => {
   const z = rand(0.2, 1);
-  return { x: rand(0, W), y: rand(0, H), z, size: z < 0.5 ? 1 : z < 0.8 ? 1.6 : 2.4, tw: rand(0, TAU), twSpeed: rand(1.5, 4) };
+  const tint = Math.random();
+  return {
+    x: rand(0, W), y: rand(0, H), z,
+    size: z < 0.5 ? 1 : z < 0.8 ? 1.7 : 2.6,
+    tw: rand(0, TAU), twSpeed: rand(1.5, 4),
+    // tinta: fredda / neutra / calda per varietà di campo stellare
+    col: tint < 0.22 ? PALETTE.starCool : tint > 0.86 ? PALETTE.starWarm : null,
+  };
 });
 
 // Nebulosa di sfondo su canvas offscreen; ricostruita al cambio di mondo.
 const bgCanvas = document.createElement("canvas");
 bgCanvas.width = W;
 bgCanvas.height = H;
+// PRNG deterministico seminato dal nome del mondo: pianeta/polvere stabili ma
+// diversi per mondo (nessun tremolio tra i frame, tutto cotto una volta).
+function seeded(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
 const NEBULA_POS = [
-  { x: W * 0.25, y: H * 0.2, r: W * 0.6 },
-  { x: W * 0.85, y: H * 0.35, r: W * 0.5 },
-  { x: W * 0.5, y: H * 0.7, r: W * 0.7 },
-  { x: W * 0.1, y: H * 0.9, r: W * 0.45 },
+  { x: W * 0.24, y: H * 0.20, rx: W * 0.70, ry: W * 0.48, rot: -0.5 },
+  { x: W * 0.86, y: H * 0.34, rx: W * 0.55, ry: W * 0.8, rot: 0.7 },
+  { x: W * 0.50, y: H * 0.72, rx: W * 0.85, ry: W * 0.55, rot: 0.2 },
+  { x: W * 0.10, y: H * 0.90, rx: W * 0.5, ry: W * 0.55, rot: -0.3 },
 ];
 function buildBackground(theme) {
   const bg = bgCanvas.getContext("2d");
+  const rnd = seeded(theme.name);
+  // Fondo verticale con più stop: cielo profondo in alto, quasi nero in basso.
   const grad = bg.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, theme.bgTop);
+  grad.addColorStop(0.55, mix(theme.bgTop, theme.bgBottom, 0.6));
   grad.addColorStop(1, theme.bgBottom);
   bg.fillStyle = grad;
   bg.fillRect(0, 0, W, H);
+
+  // Nebulose: blob ellittici sfumati, additivi (lighter) per glow ricco.
+  bg.save();
+  bg.globalCompositeOperation = "lighter";
   NEBULA_POS.forEach((pos, i) => {
     const c = theme.nebula[i % theme.nebula.length];
-    const g = bg.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, pos.r);
+    bg.save();
+    bg.translate(pos.x, pos.y);
+    bg.rotate(pos.rot);
+    bg.scale(1, pos.ry / pos.rx);
+    const g = bg.createRadialGradient(0, 0, 0, 0, 0, pos.rx);
     g.addColorStop(0, c);
+    g.addColorStop(0.5, fadeAlpha(c, 0.45));
     g.addColorStop(1, "rgba(0,0,0,0)");
     bg.fillStyle = g;
     bg.beginPath();
-    bg.arc(pos.x, pos.y, pos.r, 0, TAU);
+    bg.arc(0, 0, pos.rx, 0, TAU);
     bg.fill();
+    bg.restore();
   });
+  bg.restore();
+
+  // Polvere stellare cotta: tanti puntini fiochi per densità di campo profondo.
+  for (let i = 0; i < 220; i++) {
+    const x = rnd() * W, y = rnd() * H, a = 0.05 + rnd() * 0.22;
+    bg.fillStyle = `rgba(${200 + (rnd() * 55) | 0},${210 + (rnd() * 45) | 0},255,${a})`;
+    bg.fillRect(x, y, 1, 1);
+  }
+
+  // Pianeta lontano: sfera con terminatore (lato illuminato/ombra) + rim light.
+  const pr = W * (0.16 + rnd() * 0.12);
+  const pxp = W * (0.12 + rnd() * 0.7);
+  const pyp = H * (0.10 + rnd() * 0.22);
+  const pc = theme.nebula[0];
+  bg.save();
+  // Alone atmosferico.
+  const halo = bg.createRadialGradient(pxp, pyp, pr * 0.7, pxp, pyp, pr * 1.5);
+  halo.addColorStop(0, fadeAlpha(pc, 0.35));
+  halo.addColorStop(1, "rgba(0,0,0,0)");
+  bg.fillStyle = halo;
+  bg.beginPath(); bg.arc(pxp, pyp, pr * 1.5, 0, TAU); bg.fill();
+  // Disco con luce da destra-alto.
+  const disc = bg.createRadialGradient(pxp + pr * 0.4, pyp - pr * 0.4, pr * 0.1, pxp, pyp, pr);
+  disc.addColorStop(0, fadeAlpha(pc, 0.9));
+  disc.addColorStop(0.55, fadeAlpha(pc, 0.5));
+  disc.addColorStop(1, "rgba(6,4,16,0.92)");
+  bg.fillStyle = disc;
+  bg.beginPath(); bg.arc(pxp, pyp, pr, 0, TAU); bg.fill();
+  // Rim light sul bordo illuminato.
+  bg.strokeStyle = fadeAlpha(theme.star, 0.5);
+  bg.lineWidth = 1.4;
+  bg.beginPath();
+  bg.arc(pxp, pyp, pr - 0.7, -1.9, 0.5);
+  bg.stroke();
+  bg.restore();
+
+  // Vignette: bordi più scuri per far risaltare l'azione al centro.
+  const vg = bg.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.5)");
+  bg.fillStyle = vg;
+  bg.fillRect(0, 0, W, H);
+}
+
+// Mescola due colori (hex o rgb/rgba) in modo grezzo → rgb string.
+function parseCol(c) {
+  if (c[0] === "#") return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16), 1];
+  const m = c.match(/[\d.]+/g).map(Number);
+  return [m[0], m[1], m[2], m[3] === undefined ? 1 : m[3]];
+}
+function mix(a, b, t) {
+  const A = parseCol(a), B = parseCol(b);
+  return `rgb(${Math.round(A[0] + (B[0] - A[0]) * t)},${Math.round(A[1] + (B[1] - A[1]) * t)},${Math.round(A[2] + (B[2] - A[2]) * t)})`;
+}
+function fadeAlpha(c, mul) {
+  const A = parseCol(c);
+  return `rgba(${A[0]},${A[1]},${A[2]},${(A[3] * mul).toFixed(3)})`;
 }
 
 let bgTime = 0;
@@ -535,13 +620,35 @@ function damagePlayer() {
 // ---------- RENDER ----------
 
 function drawStars() {
-  const col = game.theme.star;
+  const base = game.theme.star;
   for (const s of stars) {
-    const tw = 0.6 + 0.4 * Math.sin(bgTime * s.twSpeed + s.tw);
+    const tw = 0.55 + 0.45 * Math.sin(bgTime * s.twSpeed + s.tw);
     ctx.globalAlpha = Math.min(1, s.z * tw);
-    if (s.size > 2) { ctx.fillStyle = "#ffffff"; ctx.shadowColor = col; ctx.shadowBlur = 6; }
-    else { ctx.fillStyle = col; ctx.shadowBlur = 0; }
-    ctx.fillRect(s.x, s.y, s.size, s.size);
+    const col = s.col || base;
+    if (s.size > 2) {
+      // Stelle vicine: nucleo luminoso + alone + croce di scintillio.
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 7;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size * 0.5, 0, TAU);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = Math.min(1, s.z * tw) * 0.5;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 0.7;
+      const r = s.size * 1.9 * tw;
+      ctx.beginPath();
+      ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x + r, s.y);
+      ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x, s.y + r);
+      ctx.stroke();
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size * 0.6, 0, TAU);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
@@ -586,16 +693,26 @@ function drawPopups() {
 
 function drawHUD() {
   const pl = game.player;
+  // Scrim in alto: velo scuro sfumato per leggibilità su sfondi luminosi.
+  const scrim = ctx.createLinearGradient(0, 0, 0, 104);
+  scrim.addColorStop(0, "rgba(4,3,12,0.55)");
+  scrim.addColorStop(1, "rgba(4,3,12,0)");
+  ctx.fillStyle = scrim;
+  ctx.fillRect(0, 0, W, 104);
+
   ctx.textBaseline = "top";
   ctx.shadowBlur = 0;
 
   ctx.textAlign = "left";
   ctx.fillStyle = PALETTE.ui;
-  ctx.font = `bold 20px ${FONT_MONO}`;
-  ctx.fillText(String(game.score).padStart(6, "0"), 14, 12);
+  ctx.font = `bold 22px ${FONT_MONO}`;
+  ctx.shadowColor = PALETTE.player;
+  ctx.shadowBlur = 6;
+  ctx.fillText(String(game.score).padStart(6, "0"), 14, 11);
+  ctx.shadowBlur = 0;
   ctx.font = `10px ${FONT_MONO}`;
   ctx.fillStyle = PALETTE.uiDim;
-  ctx.fillText(`ONDATA ${game.wave} · MONDO ${game.level}`, 14, 36);
+  ctx.fillText(`ONDATA ${game.wave} · MONDO ${game.level}`, 14, 37);
 
   ctx.fillStyle = PALETTE.uiDim;
   ctx.fillText("ARMA", 14, 52);

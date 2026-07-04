@@ -4,10 +4,23 @@
 import { TAU, rand, punchScale } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
-import { PALETTE } from "./palette.js";
-import { drawBoss, glowFill, eye } from "./creatures.js";
+import { PALETTE, shade, withAlpha } from "./palette.js";
+import { drawBoss, glowFill, eye, rim } from "./creatures.js";
 
 const MONO = "'Consolas', 'SF Mono', ui-monospace, monospace";
+
+// Rettangolo arrotondato compatibile (path corrente pronto per fill/stroke).
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.beginPath();
+  if (ctx.roundRect) { ctx.roundRect(x, y, w, h, rr); return; }
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
 
 class BossBase {
   constructor(w, level, color, fireMul) {
@@ -52,20 +65,49 @@ class BossBase {
   attack() {}
   drawBody() {}
   drawHealth(ctx) {
-    const bw = 400;
+    const bw = Math.min(this.w - 48, 360);
     const bx = this.w / 2 - bw / 2;
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
-    ctx.fillRect(bx, 16, bw, 10);
-    ctx.fillStyle = this.enraged ? PALETTE.combo : this.color;
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = 12;
-    ctx.fillRect(bx, 16, bw * Math.max(0, this.hp / this.maxHp), 10);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = PALETTE.uiDim;
-    ctx.font = `11px ${MONO}`;
+    const by = 40;
+    const bh = 7;
+    const frac = Math.max(0, this.hp / this.maxHp);
+    const col = this.enraged ? PALETTE.combo : this.color;
+    ctx.save();
     ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText(this.name, this.w / 2, 30);
+    ctx.textBaseline = "alphabetic";
+    // Nome boss con leggero tracking e glow tenue.
+    ctx.font = `bold 12px ${MONO}`;
+    ctx.fillStyle = withAlpha(col, 0.92);
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 8;
+    ctx.fillText(this.name.split("").join(" "), this.w / 2, by - 6);
+    ctx.shadowBlur = 0;
+    // Traccia (backing) arrotondata.
+    roundRect(ctx, bx, by, bw, bh, bh / 2);
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fill();
+    // Riempimento con gradiente + glow.
+    if (frac > 0) {
+      roundRect(ctx, bx, by, bw * frac, bh, bh / 2);
+      const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+      g.addColorStop(0, shade(col, -0.15));
+      g.addColorStop(0.5, col);
+      g.addColorStop(1, shade(col, 0.35));
+      ctx.fillStyle = g;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      // Riflesso superiore.
+      ctx.shadowBlur = 0;
+      roundRect(ctx, bx + 1, by + 0.5, Math.max(0, bw * frac - 2), bh * 0.42, bh * 0.2);
+      ctx.fillStyle = "rgba(255,255,255,0.28)";
+      ctx.fill();
+    }
+    // Cornice sottile.
+    roundRect(ctx, bx, by, bw, bh, bh / 2);
+    ctx.strokeStyle = withAlpha(col, 0.5);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
   draw(ctx) {
     // Scale-punch sul colpo: il boss "reagisce" fisicamente ai danni.
@@ -174,6 +216,7 @@ class SerpentBoss extends BossBase {
     ctx.beginPath();
     ctx.arc(0, 0, this.r, 0, TAU);
     ctx.fill();
+    if (this.hitFlash <= 0) rim(ctx, this.color, 2.2, 14);
     if (this.hitFlash <= 0) eye(ctx, 0, 0, 10, PALETTE.bossEye, 1, 1);
     ctx.restore();
     ctx.shadowBlur = 0;
@@ -233,6 +276,7 @@ class FortressBoss extends BossBase {
     ctx.lineTo(-this.r * 0.7, 22);
     ctx.closePath();
     ctx.fill();
+    if (this.hitFlash <= 0) rim(ctx, this.color, 2.4, 16);
     const c = this.cannons();
     const ports = c === 2 ? [-30, 30] : c === 1 ? [0] : [];
     ctx.fillStyle = this.color;
@@ -288,6 +332,7 @@ class HiveBoss extends BossBase {
     }
     ctx.closePath();
     ctx.fill();
+    if (this.hitFlash <= 0) rim(ctx, this.color, 2.4, 16);
     ctx.strokeStyle = "rgba(10,4,16,0.3)";
     ctx.lineWidth = 2;
     for (const cell of [[-14, -6], [14, -6], [0, 10]]) {
@@ -374,6 +419,7 @@ class LaserBoss extends BossBase {
     }
     ctx.closePath();
     ctx.fill();
+    if (this.hitFlash <= 0) rim(ctx, this.color, 2.2, 16);
     ctx.shadowBlur = 0;
     if (this.hitFlash <= 0) eye(ctx, 0, 0, 12, this.phase === "fire" ? PALETTE.combo : this.color, 1, 1);
     ctx.restore();

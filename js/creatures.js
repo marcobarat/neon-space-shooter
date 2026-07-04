@@ -2,35 +2,68 @@
 // Ogni funzione riceve l'entità (x, y, t, hitFlash, r) e la disegna al neon,
 // animata. La logica di movimento/collisione resta in enemies.js.
 import { TAU } from "./utils.js";
-import { PALETTE } from "./palette.js";
+import { PALETTE, shade, withAlpha } from "./palette.js";
 
+// Riempimento volumetrico: highlight in alto a sinistra, tinta satura al centro,
+// bordo scurito → dà volume invece della tinta piatta "clip-art".
 export function glowFill(ctx, base, r) {
-  const g = ctx.createRadialGradient(0, -r * 0.3, 1, 0, 0, r);
+  const g = ctx.createRadialGradient(-r * 0.34, -r * 0.44, r * 0.05, 0, 0, r * 1.06);
   g.addColorStop(0, "#ffffff");
-  g.addColorStop(0.45, base);
-  g.addColorStop(1, base);
+  g.addColorStop(0.26, shade(base, 0.42));
+  g.addColorStop(0.68, base);
+  g.addColorStop(1, shade(base, -0.5));
   return g;
 }
 
-// Occhio riutilizzabile: sclera bianca, iride colorata, pupilla, riflesso.
+// Rim-light neon: ripassa il contorno CORRENTE con un bordo luminoso.
+// Da chiamare subito dopo un fill (il path resta attivo).
+export function rim(ctx, base, w = 1.6, blur = 9) {
+  ctx.save();
+  ctx.strokeStyle = shade(base, 0.55);
+  ctx.shadowColor = base;
+  ctx.shadowBlur = blur;
+  ctx.lineWidth = w;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Occhio riutilizzabile: sclera lucida, iride sfumata, pupilla, riflessi.
 export function eye(ctx, x, y, rad, iris, look = 0.35, blink = 1) {
   ctx.save();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "#f7fbff";
+  // sclera con leggera ombra interna per profondità
+  const sg = ctx.createRadialGradient(x - rad * 0.3, y - rad * 0.3, rad * 0.1, x, y, rad);
+  sg.addColorStop(0, "#ffffff");
+  sg.addColorStop(1, "#c7d4ec");
+  ctx.fillStyle = sg;
   ctx.beginPath();
   ctx.ellipse(x, y, rad, rad * blink, 0, 0, TAU);
   ctx.fill();
-  ctx.fillStyle = iris;
+  const py = y + rad * look * 0.3;
+  // iride sfumata + alone
+  const ig = ctx.createRadialGradient(x, py, rad * 0.1, x, py, rad * 0.6 * blink);
+  ig.addColorStop(0, shade(iris, 0.4));
+  ig.addColorStop(1, iris);
+  ctx.fillStyle = ig;
+  ctx.shadowColor = iris;
+  ctx.shadowBlur = 6;
   ctx.beginPath();
-  ctx.arc(x, y + rad * look * 0.3, rad * 0.55 * blink, 0, TAU);
+  ctx.arc(x, py, rad * 0.58 * blink, 0, TAU);
   ctx.fill();
-  ctx.fillStyle = "#0a0410";
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#080310";
   ctx.beginPath();
-  ctx.arc(x, y + rad * look * 0.3, rad * 0.28 * blink, 0, TAU);
+  ctx.arc(x, py, rad * 0.28 * blink, 0, TAU);
   ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  // riflesso grande + scintilla piccola
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.beginPath();
-  ctx.arc(x - rad * 0.25, y - rad * 0.25, rad * 0.14, 0, TAU);
+  ctx.arc(x - rad * 0.26, y - rad * 0.28, rad * 0.16, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath();
+  ctx.arc(x + rad * 0.2, y + rad * 0.05, rad * 0.07, 0, TAU);
   ctx.fill();
   ctx.restore();
 }
@@ -67,9 +100,18 @@ export function drawStraight(ctx, e) {
   ctx.quadraticCurveTo(-9, 9, -14, 4);
   ctx.closePath();
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.6, 8);
+
+  // Puntini luminescenti sulla campana.
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = withAlpha(shade(e.color, 0.5), 0.7);
+  for (const dx of [-8, 0, 8]) {
+    ctx.beginPath();
+    ctx.arc(dx, -2, 1.3, 0, TAU);
+    ctx.fill();
+  }
 
   // Due occhietti luminosi.
-  ctx.shadowBlur = 0;
   ctx.fillStyle = "#0a0410";
   ctx.beginPath();
   ctx.arc(-5, -6, 2.6, 0, TAU);
@@ -98,9 +140,10 @@ export function drawZigzag(ctx, e) {
     ctx.quadraticCurveTo(s * 12, wing, 0, 6);
     ctx.closePath();
     ctx.fill();
+    if (e.hitFlash <= 0) rim(ctx, e.color, 1.3, 7);
   }
-  // Corpo.
-  ctx.fillStyle = base;
+  // Corpo (segmentato con lucentezza centrale).
+  ctx.fillStyle = e.hitFlash > 0 ? "#ffffff" : glowFill(ctx, base, 9);
   ctx.beginPath();
   ctx.ellipse(0, 0, 3.5, 9, 0, 0, TAU);
   ctx.fill();
@@ -151,6 +194,7 @@ export function drawShooter(ctx, e) {
   ctx.beginPath();
   ctx.arc(0, 0, 12, 0, TAU);
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.6, 9);
 
   // Grande occhio centrale che guarda in basso.
   if (e.hitFlash <= 0) eye(ctx, 0, 0, 7, e.color, 1, blink);
@@ -198,6 +242,7 @@ export function drawBoss(ctx, b, enraged) {
   }
   ctx.closePath();
   ctx.fill();
+  if (b.hitFlash <= 0) rim(ctx, b.color, 2.4, enraged ? 20 : 14);
 
   // Solchi del cervello.
   ctx.strokeStyle = "rgba(10,4,16,0.35)";
@@ -242,6 +287,8 @@ export function drawTank(ctx, e) {
   }
   ctx.closePath();
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 2, 8);
+  // Crepe rocciose.
   ctx.strokeStyle = "rgba(10,4,16,0.4)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -249,6 +296,13 @@ export function drawTank(ctx, e) {
   ctx.lineTo(0, e.r * 0.1);
   ctx.lineTo(e.r * 0.4, -e.r * 0.3);
   ctx.stroke();
+  // Crateri.
+  ctx.fillStyle = "rgba(10,4,16,0.22)";
+  for (const c of [[-e.r * 0.45, e.r * 0.35, e.r * 0.16], [e.r * 0.5, e.r * 0.1, e.r * 0.12]]) {
+    ctx.beginPath();
+    ctx.arc(c[0], c[1], c[2], 0, TAU);
+    ctx.fill();
+  }
   ctx.restore();
   if (e.hitFlash <= 0) eye(ctx, 0, 2, 6, e.color, 1, 1);
   ctx.restore();
@@ -279,6 +333,7 @@ export function drawKamikaze(ctx, e) {
   ctx.lineTo(-11, -8);
   ctx.closePath();
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.6, 9);
   ctx.shadowBlur = 0;
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
@@ -315,6 +370,7 @@ export function drawSplitter(ctx, e) {
   }
   ctx.closePath();
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.6, 8);
   ctx.strokeStyle = "rgba(10,4,16,0.35)";
   ctx.lineWidth = Math.max(1, rr * 0.12);
   ctx.beginPath();
@@ -372,6 +428,7 @@ export function drawSniper(ctx, e) {
   }
   ctx.closePath();
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.8, 8);
   const dir = e.aiming > 0 ? e.aimDir : Math.PI / 2;
   ctx.strokeStyle = base;
   ctx.lineWidth = 4;
@@ -405,6 +462,7 @@ export function drawMine(ctx, e) {
   ctx.beginPath();
   ctx.arc(0, 0, e.r * 0.7, 0, TAU);
   ctx.fill();
+  if (e.hitFlash <= 0) rim(ctx, e.color, 1.6, 8);
   ctx.shadowBlur = 0;
   const blink = 0.4 + 0.6 * Math.abs(Math.sin(e.t * 8));
   ctx.fillStyle = `rgba(255,60,90,${blink})`;

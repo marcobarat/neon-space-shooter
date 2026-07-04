@@ -169,32 +169,62 @@ export class Player {
       ctx.globalAlpha = 1;
     }
 
-    // Fiamma del motore.
+    // Fiamma del motore: alone morbido + fiamma esterna + nucleo caldo.
+    const flick = 8 + Math.random() * 10;
+    const eng = ctx.createRadialGradient(0, 12, 1, 0, 12, 18);
+    eng.addColorStop(0, "rgba(255,180,120,0.55)");
+    eng.addColorStop(1, "rgba(255,120,80,0)");
+    ctx.fillStyle = eng;
+    ctx.beginPath();
+    ctx.arc(0, 13, 16, 0, TAU);
+    ctx.fill();
     ctx.fillStyle = PALETTE.flame;
     ctx.shadowColor = PALETTE.flame;
     ctx.shadowBlur = 16;
     ctx.beginPath();
     ctx.moveTo(-5, 10);
-    ctx.lineTo(0, 10 + 8 + Math.random() * 10);
+    ctx.lineTo(0, 10 + flick);
     ctx.lineTo(5, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = PALETTE.flameHot;
+    ctx.beginPath();
+    ctx.moveTo(-2.4, 10);
+    ctx.lineTo(0, 10 + flick * 0.6);
+    ctx.lineTo(2.4, 10);
     ctx.closePath();
     ctx.fill();
 
     // Scafo che EVOLVE di forma con il livello arma.
-    const g = ctx.createLinearGradient(0, -20, 0, 16);
+    const g = ctx.createLinearGradient(-6, -20, 8, 16);
     g.addColorStop(0, PALETTE.playerCore);
-    g.addColorStop(1, PALETTE.player);
+    g.addColorStop(0.5, PALETTE.player);
+    g.addColorStop(1, PALETTE.playerDeep);
     ctx.fillStyle = g;
     ctx.shadowColor = PALETTE.player;
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = 18;
     drawHull(ctx, this.weaponLevel);
+    // Rim-light neon sul contorno dello scafo (path ancora attivo).
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = PALETTE.rim;
+    ctx.strokeStyle = PALETTE.rim;
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = "round";
+    ctx.stroke();
 
-    // Cabina.
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = PALETTE.bulletCore;
+    // Cabina: cupola vetrata con alone.
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = PALETTE.bulletCore;
+    const cg = ctx.createRadialGradient(-1, -4, 0.5, 0, -2, 4.5);
+    cg.addColorStop(0, "#ffffff");
+    cg.addColorStop(0.6, PALETTE.bullet);
+    cg.addColorStop(1, PALETTE.playerDeep);
+    ctx.fillStyle = cg;
     ctx.beginPath();
-    ctx.arc(0, -2, 3, 0, TAU);
+    ctx.arc(0, -2, 3.4, 0, TAU);
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.restore();
 
     if (this.hasShield) {

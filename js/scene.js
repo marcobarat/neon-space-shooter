@@ -72,20 +72,36 @@ export function drawScene(ctx) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(t * 0.05);
-      ctx.fillStyle = th.star;
+      // Alone della galassia (additivo, tinta della nebulosa).
+      ctx.globalCompositeOperation = "lighter";
+      const halo = ctx.createRadialGradient(0, 0, 2, 0, 0, 120);
+      halo.addColorStop(0, "rgba(255,240,255,0.5)");
+      halo.addColorStop(0.25, th.nebula[0]);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = halo;
+      ctx.save();
+      ctx.scale(1, 0.5);
+      ctx.beginPath(); ctx.arc(0, 0, 120, 0, TAU); ctx.fill();
+      ctx.restore();
+      // Bracci a spirale: stelle luminose che sfumano verso l'esterno.
       for (const p of pts) {
-        ctx.globalAlpha = 0.5;
+        const fall = Math.max(0.12, 1 - p.r / 210);
+        ctx.globalAlpha = 0.55 * fall;
+        ctx.fillStyle = p.r < 60 ? "#fff4ff" : th.star;
         ctx.beginPath();
         ctx.arc(Math.cos(p.a) * p.r, Math.sin(p.a) * p.r * 0.5, p.size, 0, TAU);
         ctx.fill();
       }
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = th.nebula[0];
-      ctx.beginPath();
-      ctx.arc(0, 0, 40, 0, TAU);
-      ctx.fill();
+      // Nucleo brillante.
+      ctx.globalAlpha = 1;
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 26);
+      core.addColorStop(0, "#ffffff");
+      core.addColorStop(1, "rgba(255,220,255,0)");
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(0, 0, 26, 0, TAU); ctx.fill();
       ctx.restore();
       ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
       break;
     }
     case "asteroids": {
@@ -93,8 +109,12 @@ export function drawScene(ctx) {
         ctx.save();
         ctx.translate(a.x, a.y);
         ctx.rotate(a.rot);
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = "rgba(120,130,120,0.5)";
+        ctx.globalAlpha = 0.6;
+        // Roccia ombreggiata: luce in alto a sinistra, ombra in basso a destra.
+        const g = ctx.createRadialGradient(-a.r * 0.4, -a.r * 0.4, a.r * 0.15, 0, 0, a.r);
+        g.addColorStop(0, "rgba(150,160,150,0.6)");
+        g.addColorStop(1, "rgba(40,46,50,0.5)");
+        ctx.fillStyle = g;
         ctx.beginPath();
         for (let i = 0; i < 7; i++) {
           const ang = (i / 7) * TAU;
@@ -106,6 +126,9 @@ export function drawScene(ctx) {
         }
         ctx.closePath();
         ctx.fill();
+        ctx.strokeStyle = "rgba(190,210,200,0.18)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.restore();
       }
       ctx.globalAlpha = 1;
@@ -132,13 +155,20 @@ export function drawScene(ctx) {
       break;
     }
     case "ember": {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
       for (const p of cur.items) {
-        ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(t * 3 + p.tw));
-        ctx.fillStyle = "#ff8a3f";
+        ctx.globalAlpha = 0.3 + 0.4 * Math.abs(Math.sin(t * 3 + p.tw));
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2.4);
+        g.addColorStop(0, "#ffe08a");
+        g.addColorStop(0.4, "#ff8a3f");
+        g.addColorStop(1, "rgba(255,80,40,0)");
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, TAU);
+        ctx.arc(p.x, p.y, p.r * 2.4, 0, TAU);
         ctx.fill();
       }
+      ctx.restore();
       ctx.globalAlpha = 1;
       break;
     }
@@ -146,14 +176,24 @@ export function drawScene(ctx) {
       for (const g of cur.items) {
         ctx.save();
         ctx.translate(g.x, g.y);
+        ctx.globalCompositeOperation = "lighter";
+        // Nucleo luminoso della galassia lontana.
+        const core = ctx.createRadialGradient(0, 0, 1, 0, 0, g.r * 1.1);
+        core.addColorStop(0, "rgba(220,245,255,0.5)");
+        core.addColorStop(0.3, th.nebula[0]);
+        core.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = core;
+        ctx.save(); ctx.scale(1, 0.4);
+        ctx.beginPath(); ctx.arc(0, 0, g.r * 1.1, 0, TAU); ctx.fill();
+        ctx.restore();
         ctx.rotate(t * 0.03);
-        ctx.globalAlpha = 0.18;
+        ctx.globalAlpha = 0.22;
         ctx.fillStyle = th.star;
         for (let i = 0; i < 40; i++) {
           const a = (i / 40) * 4;
           const r = i * 1.3;
           ctx.beginPath();
-          ctx.arc(Math.cos(a) * r, Math.sin(a) * r * 0.4, 1.3, 0, TAU);
+          ctx.arc(Math.cos(a) * r, Math.sin(a) * r * 0.4, 1.3 * (1 - i / 60), 0, TAU);
           ctx.fill();
         }
         ctx.restore();
