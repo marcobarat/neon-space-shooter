@@ -29,3 +29,40 @@ export function comboMultiplier(combo) {
 export function punchScale(flash, amount = 3.2) {
   return 1 + Math.max(0, flash) * amount;
 }
+
+// ---------- STYLE RANK (D → SSS) ----------
+// Metadati dei gradi di stile, dal più basso al più alto. index 0..5.
+// I colori virano dal "freddo/neutro" (D) al "caldo/acceso" (SSS).
+export const STYLE_RANKS = [
+  { label: "D", color: "#8090b8" },
+  { label: "C", color: "#7df9ff" },
+  { label: "B", color: "#4dffa6" },
+  { label: "A", color: "#ffd23f" },
+  { label: "S", color: "#ff9a3f" },
+  { label: "SSS", color: "#ff5bd0" },
+];
+
+// Soglie per salire di grado: servono SIA combo alta SIA tempo senza danni.
+// Ogni tier richiede combo >= combo e secondi-senza-danni >= time.
+const STYLE_TIERS = [
+  { combo: 3, time: 1 },   // → C
+  { combo: 6, time: 3 },   // → B
+  { combo: 10, time: 6 },  // → A
+  { combo: 16, time: 9 },  // → S
+  { combo: 26, time: 13 }, // → SSS
+];
+
+// Funzione PURA: calcola l'indice del grado di stile (0=D … 5=SSS) da
+// combo corrente e tempo trascorso dall'ultimo danno (secondi).
+// Poiché il tempo-senza-danni si azzera quando vieni colpito, un colpo fa
+// crollare il grado; combo alte + nessun danno lo fanno salire.
+export function styleRank(combo, timeSinceDamage) {
+  const c = Math.max(0, combo || 0);
+  const safe = Math.max(0, timeSinceDamage || 0);
+  let idx = 0;
+  for (const t of STYLE_TIERS) {
+    if (c >= t.combo && safe >= t.time) idx++;
+    else break;
+  }
+  return idx;
+}

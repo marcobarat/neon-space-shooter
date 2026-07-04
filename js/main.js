@@ -1,6 +1,7 @@
 // Game loop principale e macchina a stati (menu / gioco / pausa / game over).
-import { rand, randInt, circleHit, clamp, comboMultiplier, TAU } from "./utils.js";
-import { initInput, input, consumeStart, consumeBomb, consumeSuper, consumePause, onFirstInteraction, touchButtons } from "./input.js";
+import { rand, randInt, circleHit, clamp, comboMultiplier, styleRank, STYLE_RANKS, TAU } from "./utils.js";
+import { initInput, input, consumeStart, consumeBomb, consumeSuper, consumePause, consumeShare, onFirstInteraction, onShare, touchButtons } from "./input.js";
+import { renderShareCard, shareCard } from "./sharecard.js";
 import { unlockAudio, sfx } from "./audio.js";
 import { Player, MAX_WEAPON } from "./player.js";
 import { Enemy } from "./enemies.js";
@@ -39,6 +40,8 @@ onFirstInteraction(unlockAudio);
 
 const HS_KEY = "neon_space_shooter_highscore";
 const State = { MENU: "menu", PLAY: "play", PAUSE: "pause", GAMEOVER: "gameover" };
+// URL pubblico (GitHub Pages) stampato sulla Flex Card come invito a sfidare.
+const SHARE_URL = "marcobarat.github.io/neon-space-shooter";
 
 // Stelle su 3 layer con parallasse + twinkle.
 const stars = Array.from({ length: 160 }, () => {
@@ -106,6 +109,9 @@ function newGame() {
     comboTimer: 0,
     hitStop: 0,
     popups: [],
+    styleRank: 0,
+    bestRank: 0,
+    noHitTime: 0,
   };
 }
 
@@ -116,6 +122,31 @@ function addPopup(x, y, text, color) {
 game = newGame();
 buildBackground(game.theme);
 initScene(game.theme.scene, W, H, game.theme);
+
+// ---- Flex Card / condivisione ----
+const shareBtn = touchButtons.find((b) => b.id === "share");
+let sharing = false;
+function doShare() {
+  // Solo al Game Over; evita doppioni se un'altra condivisione è in corso.
+  if (game.state !== State.GAMEOVER || sharing) return;
+  sharing = true;
+  try {
+    const card = renderShareCard({
+      score: game.score,
+      level: game.level,
+      bestCombo: game.bestCombo,
+      rankIndex: game.bestRank,
+      url: SHARE_URL,
+    });
+    shareCard(card, {
+      text: `Ho fatto ${game.score} punti (rank ${STYLE_RANKS[game.bestRank].label}) a Neon Space Shooter. Sfidami: https://${SHARE_URL}`,
+    });
+  } catch (e) { /* condivisione best-effort: non deve mai rompere il gioco */ }
+  // Sblocca al frame dopo così un secondo tap/gesto può riprovare.
+  setTimeout(() => { sharing = false; }, 400);
+}
+// Callback SINCRONO (dentro al gesto) per preservare la user-activation di share().
+onShare(doShare);
 
 function startPlaying() {
   const hs = game.highScore;
@@ -195,6 +226,8 @@ function updateStars(dt) {
 
 function update(dt) {
   bgTime += dt;
+  // Il pulsante CONDIVIDI è attivo/toccabile solo al Game Over.
+  if (shareBtn) shareBtn.hidden = game.state !== State.GAMEOVER;
   updateStars(dt);
   updateScene(dt);
   game.particles.update(dt);
@@ -206,10 +239,12 @@ function update(dt) {
 
   // Stati non giocanti: menu / game over.
   if (game.state === State.MENU || game.state === State.GAMEOVER) {
+    const shared = consumeShare(); // condivisione già eseguita nel gesto (onShare)
     const pressed = consumeStart();
     consumeBomb(); consumeSuper(); consumePause();
     if (game.state === State.GAMEOVER) game.gameoverLock = Math.max(0, game.gameoverLock - dt);
-    if (pressed && (game.state === State.MENU || game.gameoverLock <= 0)) startPlaying();
+    // La condivisione NON deve contare come "premi per riprovare" (anti-restart).
+    if (pressed && !shared && (game.state === State.MENU || game.gameoverLock <= 0)) startPlaying();
     return;
   }
 
@@ -258,6 +293,27 @@ function update(dt) {
   if (game.enemies.length === 0 && !game.boss) {
     game.waveCooldown -= dt;
     if (game.waveCooldown <= 0) { spawnWave(); game.waveCooldown = 2.0; }
+  }
+
+  updateStyleRank(dt);
+}
+
+// Aggiorna lo STYLE RANK (D→SSS): sale con combo alte e nessun danno, crolla
+// quando vieni colpito (noHitTime azzerato in damagePlayer). Logica pura in
+// utils.js (styleRank); qui solo stato + feedback al cambio di grado.
+function updateStyleRank(dt) {
+  game.noHitTime += dt;
+  const idx = styleRank(game.combo, game.noHitTime);
+  if (idx !== game.styleRank) {
+    // Feedback quando SALE, marcato su S/SSS. Niente flash a schermo intero.
+    if (idx > game.styleRank && idx >= 4) {
+      const r = STYLE_RANKS[idx];
+      addPopup(game.player.x, game.player.y - 70, `RANK ${r.label}!`, r.color);
+      game.particles.addShake(idx >= 5 ? 6 : 4);
+      sfx.combo();
+    }
+    game.styleRank = idx;
+    if (idx > game.bestRank) game.bestRank = idx;
   }
 }
 
@@ -465,6 +521,7 @@ function handleCollisions() {
 function damagePlayer() {
   const p = game.player;
   if (p.invuln > 0) return;
+  game.noHitTime = 0; // azzera lo style rank: sei stato colpito
   const result = p.takeHit();
   game.particles.burst(p.x, p.y, PALETTE.player, 22);
   game.particles.addShake(14);
@@ -596,6 +653,31 @@ function drawHUD() {
   }
   ctx.shadowBlur = 0;
 
+  // STYLE RANK (top-right, sotto le vite). Pulsa e vira di colore salendo.
+  {
+    const r = STYLE_RANKS[game.styleRank];
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    ctx.font = `9px ${FONT_MONO}`;
+    ctx.fillStyle = PALETTE.uiDim;
+    ctx.fillText("STYLE", W - 14, 56);
+    // Pulsazione: più marcata ai gradi alti; nessun flash a schermo intero.
+    const amp = 0.05 + 0.03 * game.styleRank;
+    const pulse = game.styleRank >= 1 ? 1 + Math.sin(bgTime * (5 + game.styleRank)) * amp : 1;
+    ctx.save();
+    ctx.translate(W - 14, 82);
+    ctx.scale(pulse, pulse);
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = r.color;
+    ctx.shadowColor = r.color;
+    ctx.shadowBlur = game.styleRank >= 3 ? 12 : 4;
+    ctx.font = `bold ${16 + game.styleRank * 2}px ${FONT_MONO}`;
+    ctx.fillText(r.label, 0, 0);
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
   if (game.combo >= 2) {
     const mult = comboMultiplier(game.combo);
     const t = Math.max(0, Math.min(1, game.comboTimer / 2.2));
@@ -619,6 +701,7 @@ function drawTouchButtons() {
   if (!input.isTouch) return;
   const pl = game.player;
   for (const b of touchButtons) {
+    if (b.hidden) continue; // es. "share": disegnato solo al Game Over
     let col = PALETTE.uiDim;
     let active = true;
     if (b.id === "bomb") { col = "#ff9a3f"; active = pl.bombs > 0; }
@@ -644,6 +727,34 @@ function drawTouchButtons() {
       ctx.fillText(b.label, b.x, b.y + 1);
     }
   }
+  ctx.globalAlpha = 1;
+}
+
+// Controllo CONDIVIDI al Game Over: pulsante toccabile su mobile, hint tasto su desktop.
+function drawShareControl() {
+  if (!input.isTouch || !shareBtn) {
+    drawLines([{ text: "C per condividere il risultato", y: H * 0.32 + 172, font: `13px ${FONT}`, color: PALETTE.bullet }]);
+    return;
+  }
+  const b = shareBtn;
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = PALETTE.bullet;
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = PALETTE.bullet;
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.r, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = PALETTE.bullet;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold 22px ${FONT_MONO}`;
+  ctx.fillText(b.label, b.x, b.y + 1);
+  ctx.font = `bold 13px ${FONT}`;
+  ctx.fillText("CONDIVIDI", b.x, b.y + b.r + 14);
   ctx.globalAlpha = 1;
 }
 
@@ -750,13 +861,15 @@ function render() {
       { text: "Sali di MONDO battendo i boss. Potenzia l'arma, usa bombe e super!", y: H * 0.5 + 120, font: `12px ${FONT}`, color: PALETTE.uiDim },
     ]);
   } else if (game.state === State.GAMEOVER) {
+    const rk = STYLE_RANKS[game.bestRank];
     drawLines([
       { text: "GAME OVER", y: H * 0.32, font: `bold 44px ${FONT}`, color: PALETTE.boss, glow: true },
       { text: `Punteggio ${game.score}`, y: H * 0.32 + 46, font: `22px ${FONT}`, color: PALETTE.ui },
-      { text: `Mondo ${game.level} · Miglior combo ${game.bestCombo}`, y: H * 0.32 + 78, font: `15px ${FONT}`, color: PALETTE.uiDim },
+      { text: `Mondo ${game.level} · Combo ${game.bestCombo} · Rank ${rk.label}`, y: H * 0.32 + 78, font: `15px ${FONT}`, color: PALETTE.uiDim },
       { text: `Record ${game.highScore}`, y: H * 0.32 + 102, color: PALETTE.combo },
       { text: game.gameoverLock > 0 ? "..." : (input.isTouch ? "Tocca per riprovare" : "Premi per riprovare"), y: H * 0.32 + 148, color: PALETTE.uiDim },
     ]);
+    drawShareControl();
   }
 }
 

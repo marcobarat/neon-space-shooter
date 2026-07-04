@@ -36,15 +36,24 @@ function fireUnlock() {
   unlockCallbacks = [];
 }
 
+// Callback SINCRONO per la condivisione: va eseguito DENTRO al gesto utente
+// (touch/click/tasto) per non perdere la "user activation" richiesta da
+// navigator.share() su iOS/Android.
+const shareCallbacks = [];
+export function onShare(cb) { shareCallbacks.push(cb); }
+function fireShare() { shareCallbacks.forEach((cb) => cb()); }
+
 // Edge-trigger per le azioni.
 let startPressed = false;
 let bombPressed = false;
 let superPressed = false;
 let pausePressed = false;
+let sharePressed = false;
 export function consumeStart() { const v = startPressed; startPressed = false; return v; }
 export function consumeBomb() { const v = bombPressed; bombPressed = false; return v; }
 export function consumeSuper() { const v = superPressed; superPressed = false; return v; }
 export function consumePause() { const v = pausePressed; pausePressed = false; return v; }
+export function consumeShare() { const v = sharePressed; sharePressed = false; return v; }
 
 export function initInput(canvas) {
   // Layout pulsanti touch (coordinate canvas).
@@ -53,12 +62,15 @@ export function initInput(canvas) {
     { id: "pause", x: W - 30, y: 30, r: 20, label: "II" },
     { id: "bomb", x: 54, y: H - 56, r: 34, label: "B" },
     { id: "super", x: W - 54, y: H - 56, r: 34, label: "S" },
+    // Pulsante CONDIVIDI: visibile/attivo solo al Game Over (hidden gestito da main.js).
+    { id: "share", x: W / 2, y: H * 0.32 + 210, r: 34, label: "⤴", hidden: true },
   );
 
   const trigger = (id) => {
     if (id === "pause") pausePressed = true;
     else if (id === "bomb") bombPressed = true;
     else if (id === "super") superPressed = true;
+    else if (id === "share") { sharePressed = true; fireShare(); }
   };
 
   // ---- Tastiera ----
@@ -70,6 +82,8 @@ export function initInput(canvas) {
       if (e.code === "KeyB" || e.code === "ShiftLeft") bombPressed = true;
       if (e.code === "KeyE") superPressed = true;
       if (e.code === "KeyP" || e.code === "Escape") pausePressed = true;
+      // Condividi (desktop): non deve contare come "premi per riprovare".
+      if (e.code === "KeyC") { sharePressed = true; fireShare(); }
     }
     startPressed = true;
     fireUnlock();
@@ -92,6 +106,7 @@ export function initInput(canvas) {
     };
   };
   const hitButton = (p) => touchButtons.find((b) => {
+    if (b.hidden) return false;
     const dx = p.x - b.x, dy = p.y - b.y;
     return dx * dx + dy * dy <= (b.r + 8) * (b.r + 8);
   });
@@ -102,7 +117,8 @@ export function initInput(canvas) {
     input.mouseActive = true;
     const p = canvasPoint(e.clientX, e.clientY);
     const b = hitButton(p);
-    if (b) { trigger(b.id); startPressed = true; fireUnlock(); return; }
+    // "share" non deve contare come "premi per riprovare" (niente startPressed).
+    if (b) { trigger(b.id); if (b.id !== "share") startPressed = true; fireUnlock(); return; }
     toCanvas(e.clientX, e.clientY);
     input.firing = true;
     startPressed = true;
@@ -120,7 +136,7 @@ export function initInput(canvas) {
     for (const t of e.changedTouches) {
       const p = canvasPoint(t.clientX, t.clientY);
       const b = hitButton(p);
-      if (b) { trigger(b.id); startPressed = true; fireUnlock(); continue; }
+      if (b) { trigger(b.id); if (b.id !== "share") startPressed = true; fireUnlock(); continue; }
       // Touch di movimento/sparo.
       moveTouchId = t.identifier;
       input.mouseX = p.x; input.mouseY = Math.max(0, p.y - TOUCH_OFFSET);

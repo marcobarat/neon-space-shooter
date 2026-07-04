@@ -2,7 +2,7 @@
 // Eseguibili con: npm test  (usa il runner integrato di Node).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clamp, rand, randInt, circleHit, choose } from "../js/utils.js";
+import { clamp, rand, randInt, circleHit, choose, styleRank, STYLE_RANKS } from "../js/utils.js";
 
 test("clamp mantiene il valore nei limiti", () => {
   assert.equal(clamp(5, 0, 10), 5);
@@ -45,4 +45,43 @@ test("circleHit gestisce il contatto esatto sul bordo", () => {
   const a = { x: 0, y: 0, r: 10 };
   const b = { x: 20, y: 0, r: 10 }; // distanza 20 == somma raggi => tocca
   assert.equal(circleHit(a, b), true);
+});
+
+test("styleRank: parte da D (0) senza combo né tempo", () => {
+  assert.equal(styleRank(0, 0), 0);
+  assert.equal(styleRank(100, 0), 0); // appena colpito (0s): crolla a D anche con combo alta
+  assert.equal(styleRank(0, 100), 0); // sopravvivi ma senza combo: resta D
+});
+
+test("styleRank: sale con combo alte E tempo senza danni", () => {
+  assert.equal(styleRank(3, 1), 1);   // C
+  assert.equal(styleRank(6, 3), 2);   // B
+  assert.equal(styleRank(10, 6), 3);  // A
+  assert.equal(styleRank(16, 9), 4);  // S
+  assert.equal(styleRank(26, 13), 5); // SSS
+});
+
+test("styleRank: serve SIA la combo SIA il tempo (il tier più basso limita)", () => {
+  // Combo altissima ma poco tempo dall'ultimo danno => resta basso.
+  assert.equal(styleRank(26, 1), 1);
+  // Tanto tempo ma combo bassa => limitato dalla combo.
+  assert.equal(styleRank(3, 100), 1);
+});
+
+test("styleRank: monotòna e satura a SSS, robusta a input invalidi", () => {
+  assert.equal(styleRank(1000, 1000), STYLE_RANKS.length - 1); // non supera SSS
+  assert.equal(styleRank(-5, -5), 0); // negativi trattati come 0
+  assert.equal(styleRank(undefined, undefined), 0);
+  // Non decresce mai aumentando combo o tempo.
+  let prev = 0;
+  for (let c = 0; c <= 40; c += 2) {
+    const r = styleRank(c, c);
+    assert.ok(r >= prev, `rank non deve calare: combo=${c}`);
+    prev = r;
+  }
+});
+
+test("STYLE_RANKS: sei gradi etichettati D..SSS con colore", () => {
+  assert.deepEqual(STYLE_RANKS.map((r) => r.label), ["D", "C", "B", "A", "S", "SSS"]);
+  for (const r of STYLE_RANKS) assert.match(r.color, /^#/);
 });
