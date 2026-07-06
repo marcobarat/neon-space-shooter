@@ -3,10 +3,47 @@
 // game loop, drawScene(ctx) nel render.
 import { TAU, rand } from "./utils.js";
 
-let cur = null; // { id, W, H, time, items }
+let cur = null; // { id, W, H, time, items, far }
+
+// ---- Grana animata (film grain) ----
+// Un tile di rumore monocromo cotto UNA volta; per-frame si stampa con un
+// offset intero → l'occhio la percepisce viva ma costa un solo fill di pattern.
+let noiseTile = null;
+let noisePattern = null;
+function getNoisePattern(ctx) {
+  if (noisePattern) return noisePattern;
+  noiseTile = document.createElement("canvas");
+  noiseTile.width = noiseTile.height = 128;
+  const nc = noiseTile.getContext("2d");
+  const img = nc.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = Math.random() < 0.5 ? 10 : 0; // alpha ~4%
+  }
+  nc.putImageData(img, 0, 0);
+  noisePattern = ctx.createPattern(noiseTile, "repeat");
+  return noisePattern;
+}
+
+export function drawGrain(ctx, t, W, H) {
+  const ox = ((t * 61) | 0) % 128;
+  const oy = ((t * 37) | 0) % 128;
+  ctx.save();
+  ctx.translate(-ox, -oy);
+  ctx.fillStyle = getNoisePattern(ctx);
+  ctx.fillRect(0, 0, W + 128, H + 128);
+  ctx.restore();
+}
 
 export function initScene(id, W, H, theme) {
   const s = { id, W, H, time: 0, theme, items: null, shoot: 0 };
+  // Layer LONTANO (parallasse): grandi forme fioche che si muovono meno del
+  // resto → profondità vera anche in portrait.
+  s.far = Array.from({ length: 7 }, () => ({
+    x: rand(0, W), y: rand(0, H), r: rand(26, 70),
+    a: rand(0.05, 0.11), rot: rand(0, TAU), vy: rand(3, 8),
+  }));
   if (id === "galaxy") {
     // Punti lungo due bracci a spirale.
     const pts = [];
@@ -41,6 +78,11 @@ export function updateScene(dt) {
   if (!cur) return;
   cur.time += dt;
   cur.shoot -= dt;
+  // deriva lentissima del layer lontano
+  for (const f of cur.far) {
+    f.y += f.vy * dt;
+    if (f.y - f.r > cur.H) { f.y = -f.r; f.x = rand(0, cur.W); }
+  }
   if (cur.id === "asteroids") {
     for (const a of cur.items) {
       a.y += a.vy * dt;
@@ -62,10 +104,69 @@ export function updateScene(dt) {
   }
 }
 
-export function drawScene(ctx) {
+// Disegna il layer lontano nello "spirito" della scena: silhouette per gli
+// asteroidi, foschia per l'aurora, colonne di bagliore per l'inferno,
+// monoliti per il vuoto, ammassi stellari per la galassia.
+function drawFar(ctx, px) {
+  const th = cur.theme;
+  ctx.save();
+  ctx.translate(px * 0.45, 0);
+  for (const f of cur.far) {
+    ctx.globalAlpha = f.a;
+    switch (cur.id) {
+      case "asteroids": {
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.rot);
+        ctx.fillStyle = "#9db3a6";
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * TAU;
+          const rr = f.r * (0.7 + Math.sin(i * 2.4) * 0.22);
+          i === 0 ? ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case "ember": {
+        const g = ctx.createLinearGradient(f.x, f.y - f.r * 2, f.x, f.y + f.r * 2);
+        g.addColorStop(0, "rgba(255,120,40,0)");
+        g.addColorStop(0.5, "rgba(255,140,50,0.5)");
+        g.addColorStop(1, "rgba(255,60,30,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(f.x - f.r * 0.3, f.y - f.r * 2, f.r * 0.6, f.r * 4);
+        break;
+      }
+      case "void": {
+        ctx.fillStyle = "#020a10";
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.rotate(f.rot * 0.2);
+        ctx.fillRect(-f.r * 0.18, -f.r, f.r * 0.36, f.r * 2);
+        ctx.restore();
+        break;
+      }
+      default: { // galaxy / aurora: foschia tinta della nebulosa
+        ctx.fillStyle = th.nebula[(f.r | 0) % th.nebula.length];
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y, f.r * 1.6, f.r * 0.6, f.rot, 0, TAU);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+export function drawScene(ctx, px = 0) {
   if (!cur) return;
   const t = cur.time;
   const th = cur.theme;
+  drawFar(ctx, px);
+  ctx.save();
+  ctx.translate(px * 0.18, 0);
   switch (cur.id) {
     case "galaxy": {
       const { cx, cy, pts } = cur.items;
@@ -136,8 +237,8 @@ export function drawScene(ctx) {
     }
     case "aurora": {
       ctx.save();
-      for (let b = 0; b < 3; b++) {
-        ctx.globalAlpha = 0.12;
+      for (let b = 0; b < 4; b++) {
+        ctx.globalAlpha = b === 3 ? 0.07 : 0.12;
         ctx.fillStyle = th.nebula[b % th.nebula.length];
         ctx.beginPath();
         const y0 = cur.H * (0.2 + b * 0.12);
@@ -202,4 +303,5 @@ export function drawScene(ctx) {
       break;
     }
   }
+  ctx.restore();
 }

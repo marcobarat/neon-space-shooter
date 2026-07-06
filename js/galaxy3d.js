@@ -12,7 +12,9 @@ const WORLD_COLORS = [
   { inside: "#b6fff0", outside: "#2fe0d0" }, // Vuoto Profondo
 ];
 
-const COUNT = 9000;
+// Densità in base al device: i telefoni riempiono meno pixel → meno punti,
+// stessa resa percepita, frame-time al sicuro.
+const COUNT = (typeof window !== "undefined" && window.innerWidth < 760) ? 4500 : 12000;
 const RADIUS = 11;
 const BRANCHES = 5;
 const SPIN = 1.1;
@@ -23,18 +25,38 @@ let renderer, scene, camera, points, geometry, material;
 let positions, radii, colors;
 let clock;
 let started = false;
+let targetColors = null; // transizione fluida tra i mondi
 
-function buildColors(worldIndex) {
+function buildColorsInto(arr, worldIndex) {
   const wc = WORLD_COLORS[worldIndex % WORLD_COLORS.length];
   const inside = new THREE.Color(wc.inside);
   const outside = new THREE.Color(wc.outside);
   for (let i = 0; i < COUNT; i++) {
     const mixed = inside.clone().lerp(outside, Math.min(1, radii[i] / RADIUS));
-    colors[i * 3] = mixed.r;
-    colors[i * 3 + 1] = mixed.g;
-    colors[i * 3 + 2] = mixed.b;
+    arr[i * 3] = mixed.r;
+    arr[i * 3 + 1] = mixed.g;
+    arr[i * 3 + 2] = mixed.b;
   }
+}
+
+function buildColors(worldIndex) {
+  buildColorsInto(colors, worldIndex);
   if (geometry) geometry.attributes.color.needsUpdate = true;
+}
+
+// Texture radiale morbida per i punti: elimina i quadratini duri e simula
+// il bloom senza post-processing (gratis su GPU).
+function makePointTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 32;
+  const cc = c.getContext("2d");
+  const g = cc.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.4, "rgba(255,255,255,0.5)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  cc.fillStyle = g;
+  cc.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
 }
 
 export function initGalaxy(canvas) {
@@ -70,13 +92,15 @@ export function initGalaxy(canvas) {
   buildColors(0);
 
   material = new THREE.PointsMaterial({
-    size: 0.055,
+    size: 0.07,
     sizeAttenuation: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     vertexColors: true,
     transparent: true,
     opacity: 0.95,
+    map: makePointTexture(),
+    alphaTest: 0.01,
   });
 
   points = new THREE.Points(geometry, material);
@@ -106,11 +130,27 @@ function animate() {
   camera.position.x = Math.sin(t * 0.08) * 1.2;
   camera.position.y = 3.2 + Math.sin(t * 0.05) * 0.6;
   camera.lookAt(0, 0, 0);
+  // Transizione colori fluida verso il mondo nuovo (~1s), poi si spegne.
+  if (targetColors) {
+    let maxDiff = 0;
+    for (let i = 0; i < colors.length; i++) {
+      const d = targetColors[i] - colors[i];
+      colors[i] += d * 0.055;
+      const ad = Math.abs(d);
+      if (ad > maxDiff) maxDiff = ad;
+    }
+    geometry.attributes.color.needsUpdate = true;
+    if (maxDiff < 0.01) {
+      colors.set(targetColors);
+      targetColors = null;
+    }
+  }
   renderer.render(scene, camera);
 }
 
-// Cambia i colori della galassia per il mondo dato (0-based).
+// Cambia i colori della galassia per il mondo dato (0-based), con dissolvenza.
 export function setGalaxyWorld(worldIndex) {
   if (!started) return;
-  buildColors(worldIndex);
+  if (!targetColors) targetColors = new Float32Array(COUNT * 3);
+  buildColorsInto(targetColors, worldIndex);
 }

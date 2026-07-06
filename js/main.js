@@ -1,6 +1,7 @@
 // Game loop principale e macchina a stati (menu / gioco / pausa / game over).
-import { rand, randInt, circleHit, clamp, comboMultiplier, styleRank, STYLE_RANKS, TAU } from "./utils.js";
-import { initInput, input, consumeStart, consumeBomb, consumeSuper, consumePause, consumeShare, onFirstInteraction, onShare, touchButtons } from "./input.js";
+import { rand, randInt, circleHit, clamp, comboMultiplier, styleRank, STYLE_RANKS, TAU, seeded } from "./utils.js";
+import { initInput, input, consumeStart, consumeBomb, consumeSuper, consumePause, consumeShare, consumeDaily, onFirstInteraction, onShare, touchButtons } from "./input.js";
+import { todayKey, dailyRng, dailyLabel, loadDaily, beginDaily, recordDailyResult } from "./daily.js";
 import { renderShareCard, shareCard } from "./sharecard.js";
 import { unlockAudio, sfx } from "./audio.js";
 import { Player, MAX_WEAPON } from "./player.js";
@@ -10,7 +11,8 @@ import { PowerUp } from "./powerups.js";
 import { ParticleSystem } from "./particles.js";
 import { Rocket, nearestEnemy } from "./rockets.js";
 import { worldForLevel, worldIndexForLevel } from "./worlds.js";
-import { initScene, updateScene, drawScene } from "./scene.js";
+import { initScene, updateScene, drawScene, drawGrain } from "./scene.js";
+import { clearSprites } from "./spritecache.js";
 import { SUPER_INFO, TIMESLOW_FACTOR, drawSuperIcon, Drone } from "./supers.js";
 import { PALETTE, FONT, FONT_MONO } from "./palette.js";
 
@@ -60,13 +62,8 @@ const stars = Array.from({ length: 160 }, () => {
 const bgCanvas = document.createElement("canvas");
 bgCanvas.width = W;
 bgCanvas.height = H;
-// PRNG deterministico seminato dal nome del mondo: pianeta/polvere stabili ma
-// diversi per mondo (nessun tremolio tra i frame, tutto cotto una volta).
-function seeded(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
+// PRNG deterministico (ora in utils.js): seminato dal nome del mondo →
+// pianeta/polvere stabili ma diversi per mondo (tutto cotto una volta).
 
 const NEBULA_POS = [
   { x: W * 0.24, y: H * 0.20, rx: W * 0.70, ry: W * 0.48, rot: -0.5 },
@@ -74,15 +71,47 @@ const NEBULA_POS = [
   { x: W * 0.50, y: H * 0.72, rx: W * 0.85, ry: W * 0.55, rot: 0.2 },
   { x: W * 0.10, y: H * 0.90, rx: W * 0.5, ry: W * 0.55, rot: -0.3 },
 ];
+// Tile di dither ordinato (Bayer 8×8) ingrandito ×2: grana retrò da CRT,
+// cotto una volta e stampato come pattern sul gradiente (zero costo per-frame).
+let ditherPattern = null;
+function getDitherPattern(c2d) {
+  if (ditherPattern) return ditherPattern;
+  const B = [
+    [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21],
+  ];
+  const t = document.createElement("canvas");
+  t.width = t.height = 16;
+  const tc = t.getContext("2d");
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const v = B[y][x] / 64;
+      // celle chiare dove la soglia è bassa, scure dove è alta → banding testurizzato
+      if (v < 0.22) tc.fillStyle = "rgba(255,255,255,0.045)";
+      else if (v > 0.8) tc.fillStyle = "rgba(0,0,0,0.06)";
+      else continue;
+      tc.fillRect(x * 2, y * 2, 2, 2);
+    }
+  }
+  ditherPattern = c2d.createPattern(t, "repeat");
+  return ditherPattern;
+}
+
 function buildBackground(theme) {
   const bg = bgCanvas.getContext("2d");
   const rnd = seeded(theme.name);
-  // Fondo verticale con più stop: cielo profondo in alto, quasi nero in basso.
+  // Fondo verticale duotone: cielo profondo in alto, banda intermedia satura,
+  // quasi nero in basso — rampe più "grafiche", stile neo-retrò.
   const grad = bg.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, theme.bgTop);
-  grad.addColorStop(0.55, mix(theme.bgTop, theme.bgBottom, 0.6));
+  grad.addColorStop(0.5, theme.bgMid || mix(theme.bgTop, theme.bgBottom, 0.6));
   grad.addColorStop(1, theme.bgBottom);
   bg.fillStyle = grad;
+  bg.fillRect(0, 0, W, H);
+  // Dither ordinato sopra la rampa: spezza il banding e dà grana retrò.
+  bg.fillStyle = getDitherPattern(bg);
   bg.fillRect(0, 0, W, H);
 
   // Nebulose: blob ellittici sfumati, additivi (lighter) per glow ricco.
@@ -197,6 +226,8 @@ function newGame() {
     styleRank: 0,
     bestRank: 0,
     noHitTime: 0,
+    daily: null, // { key, rng, streak } quando la run è la Sfida del giorno
+    dailyResult: null,
   };
 }
 
@@ -210,6 +241,7 @@ initScene(game.theme.scene, W, H, game.theme);
 
 // ---- Flex Card / condivisione ----
 const shareBtn = touchButtons.find((b) => b.id === "share");
+const dailyBtn = touchButtons.find((b) => b.id === "daily");
 let sharing = false;
 function doShare() {
   // Solo al Game Over; evita doppioni se un'altra condivisione è in corso.
@@ -222,9 +254,12 @@ function doShare() {
       bestCombo: game.bestCombo,
       rankIndex: game.bestRank,
       url: SHARE_URL,
+      daily: game.daily ? { label: dailyLabel(game.daily.key), streak: game.daily.streak } : null,
     });
     shareCard(card, {
-      text: `Ho fatto ${game.score} punti (rank ${STYLE_RANKS[game.bestRank].label}) a Neon Space Shooter. Sfidami: https://${SHARE_URL}`,
+      text: game.daily
+        ? `Sfida del ${dailyLabel(game.daily.key)}: ${game.score} punti (streak 🔥${game.daily.streak}) a Neon Space Shooter. Stesso seed per tutti, battimi: https://${SHARE_URL}`
+        : `Ho fatto ${game.score} punti (rank ${STYLE_RANKS[game.bestRank].label}) a Neon Space Shooter. Sfidami: https://${SHARE_URL}`,
     });
   } catch (e) { /* condivisione best-effort: non deve mai rompere il gioco */ }
   // Sblocca al frame dopo così un secondo tap/gesto può riprovare.
@@ -240,8 +275,25 @@ function startPlaying() {
   game.state = State.PLAY;
   buildBackground(game.theme);
   initScene(game.theme.scene, W, H, game.theme);
+  clearSprites();
   window.__galaxySetWorld?.(worldIndexForLevel(game.level));
 }
+
+// Sfida del giorno: stessa sequenza di ondate per tutti (seed dalla data).
+function startDaily() {
+  startPlaying();
+  const key = todayKey();
+  const st = beginDaily(key);
+  game.daily = { key, rng: dailyRng(key), streak: st.streak };
+  game.banner = { text: "SFIDA DEL GIORNO", sub: `${dailyLabel(key)} · streak 🔥${st.streak}`, life: 3.0, color: PALETTE.combo };
+}
+
+// Random di spawn: nella daily arriva dal PRNG del giorno (deterministico),
+// altrimenti da Math.random. SOLO per le decisioni di spawn.
+function spawnRnd() {
+  return game.daily ? game.daily.rng() : Math.random();
+}
+const spawnRange = (min, max) => spawnRnd() * (max - min) + min;
 
 function difficulty() {
   return Math.min(2.6, 1 + (game.wave - 1) * 0.05 + (game.level - 1) * 0.15);
@@ -271,12 +323,13 @@ function spawnWave() {
   const count = Math.min(4 + game.wave, 16);
   const speedMul = 1 + (diff - 1) * 0.5;
   for (let i = 0; i < count; i++) {
-    const type = types[randInt(0, types.length - 1)];
-    const x = rand(40, W - 40);
-    const variant = game.wave >= 3 && basics.includes(type) && Math.random() < 0.4 ? 1 : 0;
+    // Nella Daily Challenge queste scelte vengono dal seed del giorno.
+    const type = types[Math.floor(spawnRnd() * types.length)];
+    const x = spawnRange(40, W - 40);
+    const variant = game.wave >= 3 && basics.includes(type) && spawnRnd() < 0.4 ? 1 : 0;
     const e = new Enemy(type, x, W, variant, game.theme.enemy[type], diff, worldIndexForLevel(game.level));
     if (type !== "tank" && type !== "sniper") e.speed *= speedMul;
-    e.y = -30 - rand(0, 300);
+    e.y = -30 - spawnRange(0, 300);
     game.enemies.push(e);
   }
 }
@@ -286,6 +339,7 @@ function advanceLevel() {
   game.theme = worldForLevel(game.level);
   buildBackground(game.theme);
   initScene(game.theme.scene, W, H, game.theme);
+  clearSprites();
   window.__galaxySetWorld?.(worldIndexForLevel(game.level));
   game.banner = { text: `MONDO ${game.level}`, sub: game.theme.name, life: 3.0, color: game.theme.enemy.straight };
 }
@@ -324,16 +378,22 @@ function update(dt) {
   game.popups = game.popups.filter((p) => p.life > 0);
   if (game.banner) { game.banner.life -= dt; if (game.banner.life <= 0) game.banner = null; }
 
+  // Pulsante SFIDA DEL GIORNO: attivo/toccabile solo nel menu.
+  if (dailyBtn) dailyBtn.hidden = game.state !== State.MENU;
+
   // Stati non giocanti: menu / game over.
   if (game.state === State.MENU || game.state === State.GAMEOVER) {
     const shared = consumeShare(); // condivisione già eseguita nel gesto (onShare)
+    const daily = consumeDaily();
     const pressed = consumeStart();
     consumeBomb(); consumeSuper(); consumePause();
     if (game.state === State.GAMEOVER) game.gameoverLock = Math.max(0, game.gameoverLock - dt);
+    if (daily && (game.state === State.MENU || game.gameoverLock <= 0)) { startDaily(); return; }
     // La condivisione NON deve contare come "premi per riprovare" (anti-restart).
     if (pressed && !shared && (game.state === State.MENU || game.gameoverLock <= 0)) startPlaying();
     return;
   }
+  consumeDaily();
 
   // Pausa (toggle).
   if (consumePause()) game.state = game.state === State.PLAY ? State.PAUSE : State.PLAY;
@@ -616,7 +676,12 @@ function damagePlayer() {
   sfx.hit();
   if (result === "weapon") addPopup(p.x, p.y - 24, "ARMA -1", PALETTE.combo);
   else if (result === "shield") addPopup(p.x, p.y - 24, "SCUDO ROTTO", PALETTE.shield);
-  if (result === "dead") { game.state = State.GAMEOVER; game.gameoverLock = 1.2; }
+  if (result === "dead") {
+    game.state = State.GAMEOVER;
+    game.gameoverLock = 1.2;
+    // Registra il punteggio della Sfida del giorno (best + streak).
+    if (game.daily) game.dailyResult = recordDailyResult(game.daily.key, game.score);
+  }
 }
 
 // ---------- RENDER ----------
@@ -714,7 +779,7 @@ function drawHUD() {
   ctx.shadowBlur = 0;
   ctx.font = `10px ${FONT_MONO}`;
   ctx.fillStyle = PALETTE.uiDim;
-  ctx.fillText(`ONDATA ${game.wave} · MONDO ${game.level}`, 14, 37);
+  ctx.fillText(`ONDATA ${game.wave} · MONDO ${game.level}${game.daily ? ` · 🔥${dailyLabel(game.daily.key)}` : ""}`, 14, 37);
 
   ctx.fillStyle = PALETTE.uiDim;
   ctx.fillText("ARMA", 14, 52);
@@ -849,6 +914,28 @@ function drawTouchButtons() {
   ctx.globalAlpha = 1;
 }
 
+// Pulsante SFIDA DEL GIORNO nel menu (solo touch: su desktop c'è il tasto G).
+function drawDailyControl() {
+  if (!input.isTouch || !dailyBtn) return;
+  const b = dailyBtn;
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = PALETTE.combo;
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = PALETTE.combo;
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.r, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `26px ${FONT_MONO}`;
+  ctx.fillText(b.label, b.x, b.y + 1);
+  ctx.globalAlpha = 1;
+}
+
 // Controllo CONDIVIDI al Game Over: pulsante toccabile su mobile, hint tasto su desktop.
 function drawShareControl() {
   if (!input.isTouch || !shareBtn) {
@@ -935,8 +1022,11 @@ function render() {
 
   ctx.save();
   game.particles.applyShake(ctx);
-  drawScene(ctx);
+  // Parallasse orizzontale legata al player: lo sfondo "risponde" al movimento.
+  drawScene(ctx, (game.player.x - W / 2) * -0.06);
   drawStars();
+  // Grana filmica sopra lo sfondo (sotto l'azione): amalgama 3D e 2D.
+  drawGrain(ctx, bgTime, W, H);
 
   const playing = game.state === State.PLAY || game.state === State.PAUSE || game.state === State.GAMEOVER;
   if (playing) {
@@ -980,22 +1070,35 @@ function render() {
     ]);
   } else if (game.state === State.MENU) {
     drawTitle(H * 0.26);
+    const ds = loadDaily();
+    const todayBest = ds.best[todayKey()] || 0;
     drawLines([
       { text: input.isTouch ? "Tocca per iniziare" : "Premi un tasto o clicca per iniziare", y: H * 0.5, color: PALETTE.ui },
       { text: `Record: ${game.highScore}`, y: H * 0.5 + 30, color: PALETTE.combo },
       { text: input.isTouch ? "Trascina per muoverti · fuoco automatico" : "Muoviti: frecce/WASD o mouse · Spara: Spazio/click", y: H * 0.5 + 66, font: `13px ${FONT}`, color: PALETTE.uiDim },
       { text: input.isTouch ? "Pulsanti: B bomba · S super · II pausa" : "Bomba: B · Super: E · Pausa: P", y: H * 0.5 + 88, font: `13px ${FONT}`, color: PALETTE.uiDim },
       { text: "Sali di MONDO battendo i boss. Potenzia l'arma, usa bombe e super!", y: H * 0.5 + 120, font: `12px ${FONT}`, color: PALETTE.uiDim },
+      { text: input.isTouch ? "🔥 SFIDA DEL GIORNO — tocca il pulsante" : "🔥 SFIDA DEL GIORNO — premi G", y: H * 0.5 + 156, font: `bold 14px ${FONT}`, color: PALETTE.combo, glow: true },
+      { text: `${dailyLabel(todayKey())}: stesso seed per tutti${todayBest ? ` · oggi ${todayBest}` : ""}${ds.streak ? ` · streak 🔥${ds.streak}` : ""}`, y: H * 0.5 + 176, font: `12px ${FONT}`, color: PALETTE.uiDim },
     ]);
+    drawDailyControl();
   } else if (game.state === State.GAMEOVER) {
     const rk = STYLE_RANKS[game.bestRank];
-    drawLines([
+    const lines = [
       { text: "GAME OVER", y: H * 0.32, font: `bold 44px ${FONT}`, color: PALETTE.boss, glow: true },
       { text: `Punteggio ${game.score}`, y: H * 0.32 + 46, font: `22px ${FONT}`, color: PALETTE.ui },
       { text: `Mondo ${game.level} · Combo ${game.bestCombo} · Rank ${rk.label}`, y: H * 0.32 + 78, font: `15px ${FONT}`, color: PALETTE.uiDim },
       { text: `Record ${game.highScore}`, y: H * 0.32 + 102, color: PALETTE.combo },
       { text: game.gameoverLock > 0 ? "..." : (input.isTouch ? "Tocca per riprovare" : "Premi per riprovare"), y: H * 0.32 + 148, color: PALETTE.uiDim },
-    ]);
+    ];
+    if (game.daily && game.dailyResult) {
+      const dr = game.dailyResult;
+      lines.splice(4, 0, {
+        text: `SFIDA ${dailyLabel(game.daily.key)} · ${dr.isNewBest ? "NUOVO BEST!" : `best ${dr.best}`} · streak 🔥${dr.streak}`,
+        y: H * 0.32 + 124, font: `bold 13px ${FONT}`, color: PALETTE.combo,
+      });
+    }
+    drawLines(lines);
     drawShareControl();
   }
 }
@@ -1014,6 +1117,7 @@ if (params.get("showcase") === "1" || lvl >= 1) {
     game.theme = worldForLevel(lvl);
     buildBackground(game.theme);
     initScene(game.theme.scene, W, H, game.theme);
+    clearSprites();
     window.__galaxySetWorld?.(worldIndexForLevel(lvl));
   }
   const th = game.theme;

@@ -5,7 +5,8 @@ import { TAU, rand, punchScale } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE, shade, withAlpha } from "./palette.js";
-import { drawBoss, glowFill, eye, rim, applyMaterial } from "./creatures.js";
+import { drawBoss, glowFill, eye, eyeFor, rim, applyMaterial } from "./creatures.js";
+import { skinFor } from "./skins.js";
 
 const MONO = "'Consolas', 'SF Mono', ui-monospace, monospace";
 
@@ -200,16 +201,36 @@ class SerpentBoss extends BossBase {
     }
   }
   drawBody(ctx) {
+    // Coda a dischi CORAZZATI: piastra scura + bullone. Prima dello sparo
+    // una luce corre coda→testa (telegraph gratuito e leggibile).
+    const interval = (this.enraged ? 0.7 : 1.1) / this.fireMul;
+    const chargeF = 1 - Math.max(0, this.fireTimer) / interval; // 0→1
+    const litIdx = Math.floor((1 - chargeF) * this.segs.length); // scende verso la testa
     for (let i = this.segs.length - 1; i >= 0; i--) {
       const s = this.segs[i];
       const f = 1 - i / this.segs.length;
+      const rr = 6 + f * 12;
+      const lit = chargeF > 0.35 && i >= litIdx - 2 && i <= litIdx + 2;
       ctx.globalAlpha = 0.4 + 0.5 * f;
-      ctx.fillStyle = this.color;
+      ctx.fillStyle = lit ? "#fff2c0" : this.color;
       ctx.shadowColor = this.color;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = lit ? 16 : 10;
       ctx.beginPath();
-      ctx.arc(s.x, s.y, 6 + f * 12, 0, TAU);
+      ctx.arc(s.x, s.y, rr, 0, TAU);
       ctx.fill();
+      // piastra metallica + bullone (solo sui segmenti grandi: costa poco)
+      if (f > 0.35) {
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(15,20,24,0.55)";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rr * 0.72, -0.6, 2.2);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(232,238,245,0.65)";
+        ctx.beginPath();
+        ctx.arc(s.x, s.y - rr * 0.3, rr * 0.16, 0, TAU);
+        ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
@@ -222,7 +243,27 @@ class SerpentBoss extends BossBase {
     ctx.arc(0, 0, this.r, 0, TAU);
     ctx.fill();
     if (this.hitFlash <= 0) rim(ctx, this.color, 2.2, 14);
-    if (this.hitFlash <= 0) eye(ctx, 0, 0, 10, PALETTE.bossEye, 1, 1);
+    // Muso corazzato: piastra trapezoidale verso il player.
+    if (this.hitFlash <= 0) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = withAlpha(shade(this.color, -0.25), 0.95);
+      ctx.beginPath();
+      ctx.moveTo(-this.r * 0.55, this.r * 0.35);
+      ctx.lineTo(this.r * 0.55, this.r * 0.35);
+      ctx.lineTo(this.r * 0.3, this.r * 1.05);
+      ctx.lineTo(-this.r * 0.3, this.r * 1.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(15,20,24,0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // zanne/bocche di fuoco sul muso
+      ctx.fillStyle = chargeF > 0.75 ? "#fff2c0" : "rgba(232,238,245,0.7)";
+      ctx.fillRect(-this.r * 0.22, this.r * 0.8, this.r * 0.14, this.r * 0.22);
+      ctx.fillRect(this.r * 0.08, this.r * 0.8, this.r * 0.14, this.r * 0.22);
+      ctx.shadowBlur = 20;
+    }
+    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, 0, 10, PALETTE.bossEye, 1, 1);
     ctx.restore();
     ctx.shadowBlur = 0;
   }
@@ -269,6 +310,7 @@ class FortressBoss extends BossBase {
     }
   }
   drawBody(ctx) {
+    const kit = skinFor(this);
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.shadowColor = this.color;
@@ -282,12 +324,51 @@ class FortressBoss extends BossBase {
     ctx.closePath();
     ctx.fill();
     if (this.hitFlash <= 0) rim(ctx, this.color, 2.4, 16);
+    if (this.hitFlash <= 0) {
+      ctx.shadowBlur = 0;
+      // Torrette/schegge di mondo lungo il bordo superiore.
+      kit.edge(ctx, this, [
+        { x: -this.r * 0.8, y: -14 }, { x: -this.r * 0.35, y: -16 },
+        { x: this.r * 0.35, y: -16 }, { x: this.r * 0.8, y: -14 },
+      ], this.r * 0.7);
+      // Giunture dei pannelli della corazza.
+      ctx.strokeStyle = "rgba(10,8,20,0.45)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (const fx of [-0.45, 0, 0.45]) {
+        ctx.moveTo(this.r * fx * 1.1, -14);
+        ctx.lineTo(this.r * fx * 0.85, 22);
+      }
+      ctx.moveTo(-this.r * 0.85, 2);
+      ctx.lineTo(this.r * 0.85, 2);
+      ctx.stroke();
+      ctx.shadowBlur = 26;
+    }
+    // Bocche di fuoco: le vive brillano, le distrutte restano CONGELATE
+    // (grigie, senza glow) — si LEGGE quanto boss hai già demolito.
     const c = this.cannons();
-    const ports = c === 2 ? [-30, 30] : c === 1 ? [0] : [];
-    ctx.fillStyle = this.color;
-    for (const ox of ports) ctx.fillRect(ox - 6, 18, 12, 14);
+    const alive = c === 2 ? [-30, 30] : c === 1 ? [0] : [];
+    const frozen = c === 2 ? [0] : c === 1 ? [-30, 30] : [-30, 0, 30];
     ctx.shadowBlur = 0;
-    if (this.hitFlash <= 0) eye(ctx, 0, 0, c === 0 ? 14 : 9, c === 0 ? this.color : PALETTE.bossEye, 1, 1);
+    for (const ox of frozen) {
+      ctx.fillStyle = "rgba(120,130,150,0.55)";
+      ctx.fillRect(ox - 6, 18, 12, 14);
+      ctx.strokeStyle = "rgba(220,240,255,0.5)"; // brina sul metallo morto
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ox - 6, 18, 12, 14);
+      ctx.beginPath();
+      ctx.moveTo(ox - 4, 20); ctx.lineTo(ox + 2, 26); ctx.moveTo(ox, 20); ctx.lineTo(ox + 4, 24);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 26;
+    const charging = this.fireTimer < 0.35;
+    ctx.fillStyle = charging ? PALETTE.bossEye : this.color;
+    for (const ox of alive) ctx.fillRect(ox - 6, 18, 12, 14);
+    ctx.shadowBlur = 0;
+    // Lente di mira: rossa solo quando sta per sparare.
+    if (this.hitFlash <= 0) {
+      eyeFor(ctx, kit, 0, 0, c === 0 ? 14 : 9, charging || c === 0 ? PALETTE.bossEye : this.color, 1, 1);
+    }
     ctx.restore();
     ctx.shadowBlur = 0;
   }
@@ -338,15 +419,36 @@ class HiveBoss extends BossBase {
     ctx.closePath();
     ctx.fill();
     if (this.hitFlash <= 0) rim(ctx, this.color, 2.4, 16);
-    ctx.strokeStyle = "rgba(10,4,16,0.3)";
-    ctx.lineWidth = 2;
-    for (const cell of [[-14, -6], [14, -6], [0, 10]]) {
-      ctx.beginPath();
-      ctx.arc(cell[0], cell[1], 7, 0, TAU);
-      ctx.stroke();
-    }
+    // Nido d'ape VERO: celle esagonali piene. Prima di generare uno sciame
+    // le celle si accendono una a una → telegraph leggibile e gratis.
     ctx.shadowBlur = 0;
-    if (this.hitFlash <= 0) eye(ctx, 0, -2, 8, PALETTE.bossEye, 1, 1);
+    const spawnMax = this.enraged ? 2.6 : 3.8;
+    const hatch = 1 - Math.max(0, this.spawnTimer) / spawnMax; // 0→1
+    const cells = [[-15, -14], [15, -14], [-24, 4], [24, 4], [-9, 16], [9, 16], [0, -2]];
+    const litCount = Math.floor(hatch * (cells.length + 1));
+    cells.forEach((cell, i) => {
+      const lit = i < litCount;
+      ctx.beginPath();
+      for (let k = 0; k <= 6; k++) {
+        const a = (k / 6) * TAU + Math.PI / 6;
+        const px = cell[0] + Math.cos(a) * 7.5;
+        const py = cell[1] + Math.sin(a) * 7.5;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      if (lit) {
+        const pulse = 0.55 + 0.35 * Math.sin(this.t * 8 + i);
+        ctx.fillStyle = withAlpha(shade(this.color, 0.45), pulse);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "rgba(10,4,16,0.28)";
+        ctx.fill();
+      }
+      ctx.strokeStyle = "rgba(10,4,16,0.45)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    });
+    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, -2, 8, PALETTE.bossEye, 1, 1);
     ctx.restore();
     ctx.shadowBlur = 0;
   }
@@ -426,7 +528,34 @@ class LaserBoss extends BossBase {
     ctx.fill();
     if (this.hitFlash <= 0) rim(ctx, this.color, 2.2, 16);
     ctx.shadowBlur = 0;
-    if (this.hitFlash <= 0) eye(ctx, 0, 0, 12, this.phase === "fire" ? PALETTE.combo : this.color, 1, 1);
+    // Anelli olografici controrotanti (×3 in fase di fuoco): pura geometria.
+    const spin = this.t * (this.phase === "fire" ? 1.8 : 0.6);
+    ctx.lineWidth = 1.6;
+    for (const [dir, rf, alpha] of [[1, 1.28, 0.55], [-1, 1.5, 0.35]]) {
+      ctx.strokeStyle = withAlpha(this.color, alpha);
+      for (let k = 0; k < 3; k++) {
+        const a0 = (k / 3) * TAU + spin * dir * 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.r * rf, a0, a0 + 1.4);
+        ctx.stroke();
+      }
+    }
+    // In carica: linee di energia risucchiate verso il nucleo.
+    if (this.phase === "charge") {
+      const charge = 1 - Math.max(0, this.timer) / 1.1;
+      ctx.strokeStyle = withAlpha(PALETTE.combo, 0.3 + 0.5 * charge);
+      ctx.lineWidth = 1.4;
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * TAU + this.t * 4;
+        const d0 = this.r * (2.1 - charge * 0.9);
+        const d1 = this.r * 1.05;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * d0, Math.sin(a) * d0);
+        ctx.lineTo(Math.cos(a) * d1, Math.sin(a) * d1);
+        ctx.stroke();
+      }
+    }
+    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, 0, 12, this.phase === "fire" ? PALETTE.combo : this.color, 1, 1);
     ctx.restore();
     ctx.shadowBlur = 0;
   }

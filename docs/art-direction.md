@@ -1,5 +1,44 @@
 # Direzione Artistica — Neon Space Shooter
 
+## ★ v2 — "Retrò-moderno 2026" (IMPLEMENTATO, luglio 2026)
+
+La visione di questo documento è stata implementata e portata allo standard
+"retrò ma moderno" del 2026. Le 5 decisioni chiave e dove vivono nel codice:
+
+1. **Shape kit per mondo — `js/skins.js`.** Non più skin come overlay piatto:
+   ogni mondo ha un kit (`BIO / SCRAP / CRYSTAL / MAGMA / VOID`) con hook di
+   **geometria**: `limb()` (tentacolo carnoso · cavo rigido a 2 segmenti ·
+   spuntone di ghiaccio · filamento di fuoco · linea-dati tratteggiata),
+   `edge()` (bozzi · piastre+bulloni · schegge · creste ardenti · archi
+   fluttuanti), `pattern()` (dettaglio interno), `hard` (0→1 morpha lo
+   scheletro da curve organiche a faccette) e `wobble` (quanto ondeggiano le
+   animazioni sin(t)). Le `drawX` di `creatures.js` leggono il kit via
+   `skinFor(e)`: lo STESSO tipo di nemico ha silhouette diversa in ogni mondo.
+2. **Occhi per mondo — `eyeFor()` in `creatures.js`.** bio (storico), `lens`
+   (robotico ad anelli), `glyph` (rombo cristallino), `slit` (fessura ardente),
+   `void` (anello cavo digitale). I segnali di pericolo restano rossi ovunque.
+3. **Boss leggibili e tematici — `js/bosses.js`.** Kraken: membrana traslucida
+   + solchi pulsanti + occhi minori che si aprono in furia. Serpente: dischi
+   corazzati + telegraph di luce coda→testa. Fortezza: giunture, schegge,
+   cannoni distrutti CONGELATI (non spariti). Alveare: nido d'ape vero con
+   celle che si accendono prima dello sciame. Nucleo: anelli olografici
+   controrotanti + linee d'energia in carica.
+4. **Sfondi con profondità — `scene.js` / `main.js` / `galaxy3d.js`.** Rampe
+   duotone (`bgMid` in `worlds.js`) + dither ordinato Bayer 8×8 cotto nel
+   `bgCanvas`; grana filmica animata (`drawGrain`, 1 pattern-fill/frame);
+   layer FAR in parallasse legato al player (`drawScene(ctx, px)`); galassia
+   3D con COUNT per device (4500 mobile / 12000 desktop), texture punto
+   morbida (niente quadretti) e transizione colori fluida tra mondi.
+5. **Budget performance — `js/spritecache.js`.** Corpi statici (fill
+   volumetrico + rim con shadowBlur) cotti in sprite offscreen ×2, chiave
+   `tipo|kit|colore|raggio`, svuotata al cambio mondo; gradienti `glowFill`
+   memoizzati. Le parti vive (arti, ali, blink, wobble) restano per-frame ma
+   senza shadowBlur. Flag di rollback: `USE_SPRITES` in `creatures.js`.
+
+Il resto del documento è la direzione originale (v1) che ha guidato il lavoro.
+
+---
+
 > Documento dell'**Art Scout**. Obiettivo: mostri **più belli**, più **robotici/alieni**,
 > con un **design DIVERSO a ogni mondo** (non solo un cambio di colore), più uno sfondo
 > **galassia 3D (three.js) in movimento** che sostituisce/affianca lo sfondo 2D fisso.

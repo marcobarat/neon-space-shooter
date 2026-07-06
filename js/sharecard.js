@@ -60,6 +60,16 @@ export function renderShareCard(data = {}) {
   ctx.fillText("SPACE SHOOTER", CARD_W / 2, 134);
   ctx.shadowBlur = 0;
 
+  // Badge SFIDA DEL GIORNO (solo run daily): data + streak.
+  if (data.daily) {
+    ctx.fillStyle = PALETTE.combo;
+    ctx.shadowColor = PALETTE.combo;
+    ctx.shadowBlur = 14;
+    ctx.font = `bold 20px ${FONT_MONO}`;
+    ctx.fillText(`🔥 SFIDA DEL ${data.daily.label} · STREAK ${data.daily.streak}`, CARD_W / 2, 172);
+    ctx.shadowBlur = 0;
+  }
+
   // Etichetta punteggio.
   ctx.fillStyle = PALETTE.uiDim;
   ctx.font = `16px ${FONT_MONO}`;

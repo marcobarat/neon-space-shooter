@@ -3,6 +3,52 @@
 Tutte le modifiche rilevanti del progetto sono documentate qui.
 Il formato segue una versione semplificata di [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.4.0] — 2026-07-06 — Update "Retrò-Moderno 2026"
+
+### Mostri con design diverso per mondo (`js/skins.js`, `js/creatures.js`)
+- **Shape kit per mondo**: BIO (Nebulosa), SCRAP (Asteroidi), CRYSTAL (Ghiaccio),
+  MAGMA (Inferno), VOID (Vuoto). Cambiano la **geometria**, non solo il colore:
+  arti (tentacoli / cavi rigidi / spuntoni di ghiaccio / filamenti di fuoco /
+  linee-dati), silhouette (curve organiche → faccette via `hard`), dettagli sul
+  perimetro (piastre+bulloni, schegge, creste ardenti, archi glitch) e ampiezza
+  delle animazioni (`wobble`).
+- **Occhi per mondo** (`eyeFor`): bio, lente robotica, glifo cristallino,
+  fessura ardente, anello digitale. Il vecchio overlay `applyMaterial` ora
+  delega ai kit.
+
+### Boss ridisegnati (`js/bosses.js`)
+- **Kraken**: membrana traslucida, solchi-cervello pulsanti, occhi minori in furia.
+- **Serpente**: coda a dischi corazzati + telegraph di luce coda→testa, muso blindato.
+- **Fortezza**: giunture dei pannelli, cannoni distrutti **congelati** (leggi i danni),
+  lente rossa solo quando spara.
+- **Regina Alveare**: nido d'ape vero, le celle si accendono prima dello sciame.
+- **Nucleo Laser**: anelli olografici controrotanti (+veloci nel fuoco), linee
+  d'energia risucchiate in carica.
+
+### Sfondi "retrò-moderni" (`js/scene.js`, `js/main.js`, `js/worlds.js`, `js/galaxy3d.js`)
+- Rampe **duotone** per mondo (`bgMid`) + **dither ordinato** Bayer 8×8 cotto.
+- **Grana filmica** animata (1 pattern-fill a frame) sopra 3D e 2D.
+- **Parallasse a 2 profondità**: layer FAR per scena (silhouette di asteroidi,
+  colonne di brace, monoliti, foschie) che risponde al movimento del player.
+- Galassia three.js: densità per device (4500 mobile / 12000 desktop), **texture
+  punto morbida** (bloom gratis), **transizione colori fluida** tra mondi.
+
+### Performance (`js/spritecache.js`)
+- Corpi statici dei nemici cotti in **sprite offscreen ×2** (fill volumetrico +
+  rim shadowBlur pagati una volta); gradienti `glowFill` **memoizzati**; cache
+  svuotata al cambio mondo; flag di rollback `USE_SPRITES`.
+
+### 🔥 Daily Challenge (`js/daily.js`)
+- **Sfida del giorno** stile Wordle: seed dalla data → **stesse ondate per tutti**
+  (spawn deterministici), punteggio del giorno + **streak** di giorni consecutivi
+  in `localStorage`. Dal menu: tasto **G** o pulsante 🔥 su touch.
+- **Flex Card dedicata**: badge "SFIDA DEL g/m · STREAK n" e testo di condivisione
+  "stesso seed per tutti, battimi".
+
+### Test
+- Nuovi test: shape kit (`tests/skins.test.js`), PRNG deterministico `seeded`
+  (spostato in `utils.js`), Daily Challenge (`tests/daily.test.js`). 35 verdi.
+
 ## [0.3.0] — 2026-07-03 — Update "Epico"
 
 ### Nuovi mostri (`js/enemies.js`, `js/creatures.js`)
