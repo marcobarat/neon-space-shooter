@@ -1,6 +1,6 @@
 {
   "name": "neon-space-shooter",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Neon Space Shooter — uno space shooter arcade 2D in canvas + JavaScript vanilla.",
   "type": "module",
   "scripts": {

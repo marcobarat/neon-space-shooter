@@ -85,3 +85,17 @@ test("STYLE_RANKS: sei gradi etichettati D..SSS con colore", () => {
   assert.deepEqual(STYLE_RANKS.map((r) => r.label), ["D", "C", "B", "A", "S", "SSS"]);
   for (const r of STYLE_RANKS) assert.match(r.color, /^#/);
 });
+
+test("seeded è deterministico e resta in [0,1)", async () => {
+  const { seeded } = await import("../js/utils.js");
+  const a = seeded("stessa-stringa");
+  const b = seeded("stessa-stringa");
+  for (let i = 0; i < 50; i++) assert.equal(a(), b());
+  const c = seeded("altra-stringa");
+  let same = true;
+  const d = seeded("stessa-stringa");
+  for (let i = 0; i < 10; i++) if (c() !== d()) same = false;
+  assert.equal(same, false);
+  const r = seeded("x");
+  for (let i = 0; i < 100; i++) { const v = r(); assert.ok(v >= 0 && v < 1); }
+});

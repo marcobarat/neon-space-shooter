@@ -4,11 +4,7 @@ import { rand, punchScale, TAU } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE } from "./palette.js";
-import {
-  drawStraight, drawZigzag, drawShooter,
-  drawTank, drawKamikaze, drawSplitter, drawSniper, drawMine,
-  applyMaterial,
-} from "./creatures.js";
+import { drawCreature } from "./bestiary/index.js";
 
 // Statistiche per tipo.
 const STATS = {
@@ -21,6 +17,19 @@ const STATS = {
   splitling: { hp: 1, r: 9, speed: 150, score: 60 },
   sniper: { hp: 2, r: 15, speed: 70, score: 250 },
   mine: { hp: 1, r: 13, speed: 40, score: 200 },
+  // Famiglia asteroide: il macigno si spezza in schegge, le schegge in sassi.
+  asteroid: { hp: 6, r: 24, speed: 45, score: 250 },
+  shard: { hp: 2, r: 13, speed: 100, score: 70 },
+  pebble: { hp: 1, r: 8, speed: 175, score: 30 },
+};
+
+// Catena di frammentazione: chi si spezza, in cosa e in quanti pezzi.
+// Usata da killEnemy (main.js). Pura e testabile: la catena TERMINA sempre
+// (pebble e splitling non compaiono come chiavi).
+export const SPLITS = {
+  splitter: { child: "splitling", min: 2, max: 2 },
+  asteroid: { child: "shard", min: 2, max: 3 },
+  shard: { child: "pebble", min: 2, max: 2 },
 };
 
 export class Enemy {
@@ -46,6 +55,10 @@ export class Enemy {
     this.aimDir = 0;
     this.color = color || PALETTE.straight;
     this.fireMul = fireMul;
+    // Famiglia asteroide: deriva laterale + rotazione propria.
+    this.vx = 0;
+    this.rot = rand(0, TAU);
+    this.spin = type === "pebble" ? rand(-3, 3) : rand(-0.6, 0.6);
   }
 
   update(dt, enemyBullets, px, py) {
@@ -122,6 +135,21 @@ export class Enemy {
         this.y += this.speed * dt;
         break;
       }
+      case "asteroid": {
+        // Macigno: scende lento, deriva appena, ruota su sé stesso.
+        this.rot += this.spin * dt;
+        this.x += (this.vx + Math.sin(this.t * 0.5) * 8) * dt;
+        this.y += this.speed * dt;
+        break;
+      }
+      case "shard":
+      case "pebble": {
+        // Frammenti: volano nella direzione dello spacco, girando.
+        this.rot += this.spin * dt;
+        this.x += this.vx * dt;
+        this.y += this.speed * dt;
+        break;
+      }
       case "mine": {
         this.x = this.baseX + Math.sin(this.t * 1.2) * 40;
         this.y += this.speed * dt;
@@ -171,24 +199,8 @@ export class Enemy {
   }
 
   _drawShape(ctx) {
-    switch (this.type) {
-      case "straight": drawStraight(ctx, this); break;
-      case "zigzag": drawZigzag(ctx, this); break;
-      case "shooter": drawShooter(ctx, this); break;
-      case "tank": drawTank(ctx, this); break;
-      case "kamikaze": drawKamikaze(ctx, this); break;
-      case "splitter":
-      case "splitling": drawSplitter(ctx, this); break;
-      case "sniper": drawSniper(ctx, this); break;
-      case "mine": drawMine(ctx, this); break;
-      default: drawStraight(ctx, this);
-    }
-    // Materiale del mondo (skin) sopra la forma, centrato sull'entità.
-    if (this.hitFlash <= 0) {
-      ctx.save();
-      ctx.translate(this.x, this.y);
-      applyMaterial(ctx, this, this.r);
-      ctx.restore();
-    }
+    // Bestiario per mondo: la stessa "classe" di nemico è una creatura
+    // completamente diversa in ogni mondo (js/bestiary/).
+    drawCreature(ctx, this);
   }
 }

@@ -3,6 +3,49 @@
 Tutte le modifiche rilevanti del progetto sono documentate qui.
 Il formato segue una versione semplificata di [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.5.0] — 2026-07-08 — Update "Bestiario"
+
+### Mostri ridisegnati DA ZERO, unici per mondo (`js/bestiary/`)
+- Via il sistema a kit (skins.js decorava gli stessi 8 scheletri): ora ogni mondo
+  ha il SUO bestiario — 23 creature disegnate da zero, base scura + accenti
+  (niente "blob luminoso"), corpi multi-parte e animazione secondaria.
+- **Nebulosa** (cartoon-dark): Ombra Golosa (imp a goccia con dentoni), Falenotte
+  (falena-pipistrello), Sputafuoco (rospo-cannone con occhi su peduncoli),
+  Urlo Cadente (teschio-cometa con afterimage).
+- **Asteroidi** (robot di rottami): Bidone-7 (barile con gambe a pistone),
+  Sfarfaglio (aliante asimmetrico con LED), Mastodonte (corazzato con fornace e
+  radar), Ariete (missile riciclato che trema accelerando).
+- **Ghiaccio** (costrutti cristallini): Vespa di Brina (ali-lama a scatto),
+  Prisma (schegge orbitanti che si allineano prima dello sparo), Ago del Gelo
+  (canna cristallina), Geode (due metà che respirano → si legge che si divide).
+- **Inferno** (demoni): Bracino (sorriso luminoso a denti scuri), Bocca di
+  Vulcano (cratere-mortaio che si carica), Diavolo Tuffatore (testa cornuta in
+  picchiata), Cuore Ustionante (riccio di magma col teschietto inciso).
+- **Vuoto** (entità digitali): Monolite (lastra con cubi d'angolo fluttuanti),
+  Pupilla del Vuoto (canna a rotaia di dati), Dittico (due celle col ponte
+  glitch), Glitch Statico (rombo d'errore con chevron warning), Frammento
+  Ostile (chevron con aberrazione cromatica), Relitto Corrotto.
+- Dispatch per (mondo, tipo) con fallback cross-mondo; corpi statici cotti in
+  sprite (spritecache), parti vive senza shadowBlur. `debug-bestiary.html`
+  mostra l'intero foglio creature per l'iterazione artistica.
+
+### 🪨 Asteroidi frantumabili (`js/enemies.js`, `js/main.js`, `js/worlds.js`)
+- Nuovo nemico **asteroide** (grande, lento, ruota e deriva) nei pool di
+  Cintura d'Asteroidi e Vuoto Profondo: alla morte si spezza in 2-3 **schegge**,
+  ogni scheggia in 2 **sassi** veloci (catena `SPLITS`, generalizza lo splitter).
+  Le vene di minerale luminose ne disegnano le linee di frattura. Drop powerup
+  ridotto sui frammenti.
+
+### 🛡 Super che distruggono i proiettili nemici
+- Il **laser** vaporizza i colpi nemici nella sua colonna (scintille incluse).
+- I **droni orbitali** bloccano i colpi al contatto (r=9): ora sono anche scudo.
+  (Nova e bomba già ripulivano lo schermo.)
+
+### Pulizia
+- Eliminati js/skins.js e il vecchio strato "materiali"; creatures.js ridotto ai
+  soli helper dei boss (glowFill/rim/eye/drawBoss); boss migrati agli occhi del
+  bestiario (lente/glifo/fessura/anello). Test: 35 verdi (nuovo bestiary.test.js).
+
 ## [0.4.0] — 2026-07-06 — Update "Retrò-Moderno 2026"
 
 ### Mostri con design diverso per mondo (`js/skins.js`, `js/creatures.js`)

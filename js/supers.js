@@ -93,6 +93,7 @@ export class Drone {
     this.angle = offset;
     this.x = 0;
     this.y = 0;
+    this.r = 9; // raggio di contatto: i droni BLOCCANO i proiettili nemici
     this.cd = 0;
   }
   update(dt, player, bullets) {

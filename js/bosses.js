@@ -5,8 +5,8 @@ import { TAU, rand, punchScale } from "./utils.js";
 import { Bullet } from "./bullets.js";
 import { sfx } from "./audio.js";
 import { PALETTE, shade, withAlpha } from "./palette.js";
-import { drawBoss, glowFill, eye, eyeFor, rim, applyMaterial } from "./creatures.js";
-import { skinFor } from "./skins.js";
+import { drawBoss, glowFill, eye, rim } from "./creatures.js";
+import { glyphEye, lensEye, slitEye, voidEye } from "./bestiary/parts.js";
 
 const MONO = "'Consolas', 'SF Mono', ui-monospace, monospace";
 
@@ -122,11 +122,6 @@ class BossBase {
       ctx.restore();
     } else {
       this.drawBody(ctx);
-      // Materiale del mondo (skin) sopra il corpo del boss.
-      ctx.save();
-      ctx.translate(this.x, this.y);
-      applyMaterial(ctx, this, this.r * 0.9);
-      ctx.restore();
     }
     this.drawHealth(ctx);
   }
@@ -263,7 +258,7 @@ class SerpentBoss extends BossBase {
       ctx.fillRect(this.r * 0.08, this.r * 0.8, this.r * 0.14, this.r * 0.22);
       ctx.shadowBlur = 20;
     }
-    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, 0, 10, PALETTE.bossEye, 1, 1);
+    if (this.hitFlash <= 0) lensEye(ctx, 0, 0, 10, PALETTE.bossEye);
     ctx.restore();
     ctx.shadowBlur = 0;
   }
@@ -310,7 +305,6 @@ class FortressBoss extends BossBase {
     }
   }
   drawBody(ctx) {
-    const kit = skinFor(this);
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.shadowColor = this.color;
@@ -326,11 +320,16 @@ class FortressBoss extends BossBase {
     if (this.hitFlash <= 0) rim(ctx, this.color, 2.4, 16);
     if (this.hitFlash <= 0) {
       ctx.shadowBlur = 0;
-      // Torrette/schegge di mondo lungo il bordo superiore.
-      kit.edge(ctx, this, [
-        { x: -this.r * 0.8, y: -14 }, { x: -this.r * 0.35, y: -16 },
-        { x: this.r * 0.35, y: -16 }, { x: this.r * 0.8, y: -14 },
-      ], this.r * 0.7);
+      // Schegge di cristallo lungo il bordo superiore.
+      ctx.fillStyle = withAlpha(shade(this.color, 0.3), 0.9);
+      for (const [sx, sy, sl] of [[-this.r * 0.8, -14, 12], [-this.r * 0.35, -16, 16], [this.r * 0.35, -16, 14], [this.r * 0.8, -14, 11]]) {
+        ctx.beginPath();
+        ctx.moveTo(sx - 4, sy);
+        ctx.lineTo(sx, sy - sl);
+        ctx.lineTo(sx + 4, sy);
+        ctx.closePath();
+        ctx.fill();
+      }
       // Giunture dei pannelli della corazza.
       ctx.strokeStyle = "rgba(10,8,20,0.45)";
       ctx.lineWidth = 2;
@@ -367,7 +366,7 @@ class FortressBoss extends BossBase {
     ctx.shadowBlur = 0;
     // Lente di mira: rossa solo quando sta per sparare.
     if (this.hitFlash <= 0) {
-      eyeFor(ctx, kit, 0, 0, c === 0 ? 14 : 9, charging || c === 0 ? PALETTE.bossEye : this.color, 1, 1);
+      glyphEye(ctx, 0, 0, c === 0 ? 14 : 9, charging || c === 0 ? PALETTE.bossEye : this.color);
     }
     ctx.restore();
     ctx.shadowBlur = 0;
@@ -448,7 +447,7 @@ class HiveBoss extends BossBase {
       ctx.lineWidth = 1.6;
       ctx.stroke();
     });
-    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, -2, 8, PALETTE.bossEye, 1, 1);
+    if (this.hitFlash <= 0) slitEye(ctx, 0, -2, 8, PALETTE.bossEye);
     ctx.restore();
     ctx.shadowBlur = 0;
   }
@@ -555,7 +554,7 @@ class LaserBoss extends BossBase {
         ctx.stroke();
       }
     }
-    if (this.hitFlash <= 0) eyeFor(ctx, skinFor(this), 0, 0, 12, this.phase === "fire" ? PALETTE.combo : this.color, 1, 1);
+    if (this.hitFlash <= 0) voidEye(ctx, 0, 0, 12, this.phase === "fire" ? PALETTE.combo : this.color);
     ctx.restore();
     ctx.shadowBlur = 0;
   }

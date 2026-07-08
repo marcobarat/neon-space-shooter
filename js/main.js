@@ -5,7 +5,7 @@ import { todayKey, dailyRng, dailyLabel, loadDaily, beginDaily, recordDailyResul
 import { renderShareCard, shareCard } from "./sharecard.js";
 import { unlockAudio, sfx } from "./audio.js";
 import { Player, MAX_WEAPON } from "./player.js";
-import { Enemy } from "./enemies.js";
+import { Enemy, SPLITS } from "./enemies.js";
 import { createBoss } from "./bosses.js";
 import { PowerUp } from "./powerups.js";
 import { ParticleSystem } from "./particles.js";
@@ -328,7 +328,7 @@ function spawnWave() {
     const x = spawnRange(40, W - 40);
     const variant = game.wave >= 3 && basics.includes(type) && spawnRnd() < 0.4 ? 1 : 0;
     const e = new Enemy(type, x, W, variant, game.theme.enemy[type], diff, worldIndexForLevel(game.level));
-    if (type !== "tank" && type !== "sniper") e.speed *= speedMul;
+    if (type !== "tank" && type !== "sniper" && type !== "asteroid") e.speed *= speedMul;
     e.y = -30 - spawnRange(0, 300);
     game.enemies.push(e);
   }
@@ -495,7 +495,16 @@ function updateSuper(dt) {
       if (tgt) game.rockets.push(new Rocket(p.x + rand(-14, 14), p.y - 10));
     }
   } else if (as.type === "drones") {
-    for (const d of game.drones) d.update(dt, p, game.playerBullets);
+    for (const d of game.drones) {
+      d.update(dt, p, game.playerBullets);
+      // I droni fanno anche da scudo: distruggono i colpi nemici al contatto.
+      for (const b of game.enemyBullets) {
+        if (!b.dead && circleHit(d, b)) {
+          b.dead = true;
+          game.particles.burst(b.x, b.y, SUPER_INFO.drones.color, 4);
+        }
+      }
+    }
   }
   if (as.time <= 0) { game.activeSuper = null; game.drones = []; }
 }
@@ -507,6 +516,13 @@ function laserDamage() {
     if (!e.dead && Math.abs(e.x - p.x) < hw + e.r && e.y < p.y && e.hit(2)) killEnemy(e);
   }
   if (game.boss && !game.boss.dead && Math.abs(game.boss.x - p.x) < hw + game.boss.r && game.boss.y < p.y && game.boss.hit(2)) killEnemy(game.boss);
+  // Il fascio VAPORIZZA anche i proiettili nemici che attraversa.
+  for (const b of game.enemyBullets) {
+    if (!b.dead && Math.abs(b.x - p.x) < hw + b.r && b.y < p.y) {
+      b.dead = true;
+      game.particles.burst(b.x, b.y, PALETTE.bullet, 3);
+    }
+  }
   game.particles.burst(p.x, rand(0, p.y), PALETTE.bullet, 2);
 }
 
@@ -558,12 +574,18 @@ function killEnemy(e) {
     sfx.ready();
   }
   addScore(e.score, e.x, e.y);
-  const chance = e.isBoss ? 1 : 0.13;
+  // Drop ridotto sui frammenti: la catena di split non deve inflazionare i powerup.
+  const isFragment = e.type === "splitling" || e.type === "shard" || e.type === "pebble";
+  const chance = e.isBoss ? 1 : isFragment ? 0.05 : 0.13;
   if (Math.random() < chance) game.powerups.push(new PowerUp(e.x, e.y, PowerUp.randomType()));
-  if (e.type === "splitter") {
-    for (const s of [-1, 1]) {
-      const sp = new Enemy("splitling", e.x + s * 10, W, 0, e.color, 1, e.skin);
+  // Frammentazione generica: splitter→splitling, asteroid→shard→pebble.
+  const split = SPLITS[e.type];
+  if (split && !e.exploded) {
+    const n = randInt(split.min, split.max);
+    for (let i = 0; i < n; i++) {
+      const sp = new Enemy(split.child, e.x + rand(-10, 10), W, 0, e.color, 1, e.skin);
       sp.y = e.y;
+      sp.vx = rand(-70, 70) * (split.child === "pebble" ? 1.6 : 1);
       game.enemies.push(sp);
     }
   }
@@ -1122,13 +1144,20 @@ if (params.get("showcase") === "1" || lvl >= 1) {
   }
   const th = game.theme;
   const wi = worldIndexForLevel(game.level);
+  // I derivati ereditano il colore del genitore, come in killEnemy.
+  const PARENT = { splitling: "splitter", shard: "asteroid", pebble: "asteroid" };
   const mk = (type, x, y) => {
-    const e = new Enemy(type, x, W, 0, th.enemy[type], 1, wi);
+    const e = new Enemy(type, x, W, 0, th.enemy[PARENT[type] || type], 1, wi);
     e.y = y; e.speed = 0;
     return e;
   };
   const pool = th.pool;
-  pool.forEach((type, i) => game.enemies.push(mk(type, 80 + i * 110, 200)));
+  pool.forEach((type, i) => game.enemies.push(mk(type, 50 + i * (W - 100) / Math.max(1, pool.length - 1), 210)));
+  // Ispezione anche dei tipi derivati (frammenti) quando il pool li genera.
+  const derived = [];
+  if (pool.includes("splitter")) derived.push("splitling");
+  if (pool.includes("asteroid")) derived.push("shard", "pebble");
+  derived.forEach((type, i) => game.enemies.push(mk(type, 120 + i * 110, 330)));
   game.boss = createBoss(th.bossType, W, game.level, th.boss, 1, wi);
   game.boss.entering = false;
   game.boss.y = H * 0.55;
