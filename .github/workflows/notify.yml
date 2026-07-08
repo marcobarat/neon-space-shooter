@@ -9,6 +9,7 @@ on:
     branches: [main]
   release:
     types: [published]
+  workflow_dispatch: # test manuale on-demand (Actions → Run workflow / gh workflow run)
 
 jobs:
   notify:
@@ -35,14 +36,26 @@ jobs:
           TEST_RES: ${{ steps.test.outcome }}
         run: |
           if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
-            echo "Secrets Telegram mancanti: salto la notifica."; exit 0
+            echo "::error::Secrets Telegram mancanti (TELEGRAM_BOT_TOKEN e/o TELEGRAM_CHAT_ID). Impostali in Settings → Secrets → Actions."
+            exit 1
           fi
           if [ "$EVENT" = "release" ]; then
             MSG="🚀 Neon Space Shooter — nuova release ${REL_TAG}"$'\n'"${REL_NAME}"
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            MSG="🔔 Neon Space Shooter — test notifiche"$'\n'"Se leggi questo, il bot funziona."
           else
             EMO="✅"; [ "$TEST_RES" != "success" ] && EMO="❌"
             MSG="${EMO} Neon Space Shooter — push su main"$'\n'"test: ${TEST_RES}"$'\n'"${COMMIT_MSG}"
           fi
-          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+          # Fail-loud: controlla la risposta di Telegram, non fidarti dell'exit di curl.
+          RESP=$(curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT}" \
-            --data-urlencode "text=${MSG}" >/dev/null
+            --data-urlencode "text=${MSG}")
+          if echo "$RESP" | grep -q '"ok":true'; then
+            echo "Messaggio Telegram inviato ✔"
+          else
+            # Non stampiamo l'intera risposta (potrebbe riflettere parti del token in URL d'errore).
+            echo "::error::Telegram ha rifiutato l'invio. Controlla TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."
+            echo "$RESP" | grep -o '"error_code":[0-9]*\|"description":"[^"]*"' || true
+            exit 1
+          fi
